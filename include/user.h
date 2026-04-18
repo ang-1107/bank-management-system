@@ -7,6 +7,7 @@
 #include <unordered_map>// For unordered map
 #include <ctime>        // For date-based account numbers
 #include <vector>       // For storing multiple user objects
+#include <cstddef>      // For size_t
 #include "json.hpp"     // JSON library for serialization
 
 using json = nlohmann::json;    // Alias for easier usage
@@ -24,6 +25,9 @@ private:
 
     static int counter;
     static std::string getCurrentDate();    // Static function to get formatted date
+    static bool ensureDataDirectory();
+    static void syncCounterFromUsers(const std::vector<User>& loadedUsers);
+    static bool parseTypeFromString(const std::string& typeText, Type& parsedType);
 
 public:
     User();                     // Constructor
@@ -32,20 +36,28 @@ public:
     void createAccount();        // Creates a new account
     void displayAccount() const; // Displays account details
     void modifyAccount();        // Modifies account (name & type)
-    void deleteAccount();        // Deletes an account
     void deposit(double amount); // Deposits money
     bool withdraw(double amount);// Withdraws money
 
     // Getter for account_number
     std::string getAccountNumber() const; 
+    std::string getUserName() const;
+    Type getAccountType() const;
 
     // JSON Serialization
     json toJson() const;
-    static void saveToJson();
+    static bool saveToJson(const std::vector<User>& users);
     static std::vector<User> loadFromJson();
 
-    // CSV Export
-    static void exportToCSV(const std::vector<User>& users);
+    // CSV Storage
+    static bool saveToCsv(const std::vector<User>& users);
+    static std::vector<User> loadFromCsv();
+
+    // Write both CSV and JSON from the same source vector
+    static bool persist(const std::vector<User>& users);
+
+    // CSV Export alias
+    static bool exportToCSV(const std::vector<User>& users);
 
     // Get-Set Methods for Testing
     void setUserName(const std::string& name);

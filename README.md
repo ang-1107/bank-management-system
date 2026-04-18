@@ -1,233 +1,255 @@
 # Bank Management System
+
 ![Made with C++](https://img.shields.io/badge/Made%20with-C%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white)
 ![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
-![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-lightgrey?style=for-the-badge)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=for-the-badge)
+![Testing: Catch2](https://img.shields.io/badge/Testing-Catch2-25c2a0?style=for-the-badge)
+![JSON: nlohmann/json](https://img.shields.io/badge/JSON-nlohmann%2Fjson-1f8ceb?style=for-the-badge)
 
-A lightweight and scalable **C++ console application** featuring core banking functionalities with structured data storage in **JSON** and **CSV**.
+A lightweight C++ console banking application with account creation, update, delete, deposit, withdraw, and robust persistence.
 
+## Features
 
-## 📌 **Features**  
-✅ **Create Accounts** (Savings & Current)  
-✅ **View Account Details**  
-✅ **Modify Account (Name & Type)**  
-✅ **Deposit & Withdraw Money**  
-✅ **Delete Account**  
-✅ **Save & Load Data in JSON**  
-✅ **Export Data to CSV**  
+- Create accounts (Savings and Current)
+- View account details
+- Modify account name and type
+- Deposit and withdraw money
+- Delete accounts
+- CSV-first persistence on startup
+- Automatic JSON synchronization from CSV state
+- Integration and regression test coverage
 
+## Table of Contents
 
-## 📜 **Table of Contents**  
-1. [Installation & Setup](#installation--setup)  
-2. [Usage Guide](#usage-guide)  
-3. [File & Directory Structure](#file--directory-structure)  
-4. [Code Explanation](#code-explanation)  
-5. [Data Storage Formats](#data-storage-formats)  
-6. [Error Handling](#error-handling)  
-7. [Contribution Guidelines](#contribution-guidelines)  
-8. [License](#license)  
-9. [Credits & Authors](#credits--authors)  
+1. [Installation and Setup](#installation-and-setup)
+2. [Usage Guide](#usage-guide)
+3. [Architecture and Persistence Model](#architecture-and-persistence-model)
+4. [Code Explanation](#code-explanation)
+5. [Data Storage Formats](#data-storage-formats)
+6. [File and Directory Structure](#file-and-directory-structure)
+7. [Test Suite](#test-suite)
+8. [Error Handling](#error-handling)
+9. [Acknowledgment and Citation](#acknowledgment-and-citation)
+10. [Contribution Guidelines](#contribution-guidelines)
 
+## Installation and Setup
 
-## ⚙️ **Installation & Setup**  
+### Prerequisites
 
-### **🔹 Prerequisites**  
-- **C++ Compiler** (GCC, Clang, MSVC, etc.)  
-- **C++17 or later**  
-- **JSON Library** ([nlohmann/json](https://github.com/nlohmann/json))  
+- C++ compiler (GCC, Clang, MSVC, etc.)
+- C++17 or later
+- Bundled nlohmann/json header in include/json.hpp
 
-### **🔹 Steps to Run**  
-1️⃣ **Clone the Repository:**  
+### Build and Run
+
+1. Clone the repository:
+
 ```sh
-git clone https://github.com/Mozeel-V/bank-management-system.git
+git clone https://github.com/ang-1107/bank-management-system.git
 cd bank-management-system
 ```
 
-2️⃣ **Compile the Code:**  
-```sh
-g++ -o bank main.cpp src/user.cpp -std=c++17 -Iinclude
-```
-OR 
+2. Build:
 
 ```sh
 make
 ```
 
-3️⃣ **Run the Program:**  
-```sh
-./bank
-```
-OR
+3. Run:
 
 ```sh
 make run
 ```
 
-4️⃣ **To Test the Program (optional):**
+4. Run tests:
+
 ```sh
 make test
 ```
 
-5️⃣ **Clear the Database and Executables after use:** 
+5. Clean build artifacts:
+
 ```sh
 make clean
 ```
 
-## 📖 **Usage Guide**  
+## Usage Guide
 
-### **1️⃣ Create an Account**  
-- The system prompts for **Name** and **Account Type** (Savings/Current).  
-- Generates a **unique account number** based on the date and a counter.  
+### 1. Create Account
 
-### **2️⃣ View Account Details**  
-```markdown
-1. Enter your account number.
-2. See Number, Name, Balance, and Type.
-```
+- Enter name and account type.
+- A date-based account number is generated.
+- State is persisted to CSV and synchronized to JSON.
 
-### **3️⃣ Deposit Money**  
-```markdown
+### 2. Display Account
+
 1. Enter account number.
-2. Enter deposit amount.
-3. Balance updates automatically.
-```
+2. View number, name, balance, and account type.
 
-### **4️⃣ Withdraw Money**  
-```markdown
+### 3. Modify Account
+
 1. Enter account number.
-2. Enter withdrawal amount.
-3. If sufficient balance → Success.
-4. If not → Error message.
-```
+2. Update name and account type.
+3. Changes are persisted immediately.
 
-### **5️⃣ Modify Account**  
-```markdown
+### 4. Delete Account
+
 1. Enter account number.
-2. Change Name & Account Type.
-3. Data is saved instantly.
-```
+2. Account is removed from the in-memory state.
+3. CSV and JSON are updated.
 
-### **6️⃣ Delete Account**  
-```markdown
+### 5. Deposit and Withdraw
+
 1. Enter account number.
-2. Confirm deletion.
-3. Account is removed from JSON file.
+2. Enter amount.
+3. On valid transactions, changes are persisted to disk.
+
+### 6. Export Accounts
+
+1. Choose export option from the menu.
+2. CSV is rewritten from current state and JSON is synchronized.
+
+## Architecture and Persistence Model
+
+- Single source of runtime state:
+  - `src/main.cpp` owns one `vector<User>` for consistent state management.
+- Startup source of truth:
+  - Accounts are loaded from `data/accounts.csv` at program start.
+- Disk persistence strategy:
+  - Any mutating operation triggers `persist(users)`.
+  - `persist(users)` writes `data/accounts.csv` and `data/accounts.json` from the same vector.
+- Directory handling:
+  - The `data` directory is created automatically if it does not exist.
+
+## Code Explanation
+
+### `User` Class
+
+Core data members:
+
+- account_number
+- user_name
+- account_balance
+- account_type
+
+Main behaviors:
+
+- `createAccount()`: reads name and type input and initializes a new account.
+- `displayAccount()`: prints account details.
+- `modifyAccount()`: updates name and account type.
+- `deposit(double amount)`: credits money to account balance.
+- `withdraw(double amount)`: debits money if sufficient balance exists.
+- `toJson()`: serializes a `User` object to JSON.
+
+Persistence and synchronization helpers:
+
+- `loadFromCsv()`: startup read path and source of truth.
+- `saveToCsv(const std::vector<User>&)`: writes canonical CSV data.
+- `loadFromJson()`: JSON read helper used for verification/sync checks.
+- `saveToJson(const std::vector<User>&)`: writes synchronized JSON snapshot.
+- `persist(const std::vector<User>&)`: writes both CSV and JSON from the same vector.
+- `exportToCSV(const std::vector<User>&)`: export entry point that keeps JSON in sync.
+
+### Main Program Flow
+
+- `main()` in `src/main.cpp` loads user state from CSV at startup.
+- Menu operations mutate one in-memory `vector<User>` state.
+- Any mutation (`create`, `modify`, `delete`, `deposit`, `withdraw`) calls `persist(users)`.
+- Export also synchronizes JSON with current CSV-backed state.
+
+## Data Storage Formats
+
+The application stores records in both CSV and JSON. CSV is read at startup, and JSON is maintained as a synchronized mirror.
+
+### CSV Format: data/accounts.csv
+
+```csv
+Account Number,Name,Balance,Type
+0000202604181,John Doe,1000.50,Savings
+0000202604182,Jane Smith,250.00,Current
 ```
 
-### **7️⃣ Export Accounts to CSV**  
-```markdown
-1. Select CSV export option.
-2. Data saved in `data/accounts.csv`.
-```
+### JSON Format: data/accounts.json
 
-
-## 📁 **File & Directory Structure**  
-```markdown
-Bank Management System/
-│
-├── .gitignore                 # Specifies files and directories that should be ignored by Git
-├── LICENSE                    # Open-source MIT license for the project
-├── README.md                  # Project description, installation, usage, and details
-├── Makefile                   # Instructions for building, cleaning and testing the project
-├── build/                     # Directory for future build artifacts
-│
-├── data/                       # Directory containing data files (accounts.json, accounts.csv)
-│   ├── accounts.json
-│   └── accounts.csv
-│
-├── include/                    # Header files
-│   ├── json.hpp                # JSON library (external)
-│   └── user.h                  # User class definition
-│
-├── src/                        # Source files
-│   └── user.cpp                # User class implementation
-│ 
-├── tests/
-│   ├── catch.hpp               # Catch2 single header file
-│   └── user_test.cpp           # Comprehensive Unit Testing
-│
-└── main.cpp                    # Main program entry point
-```
-
-
-## 🛠️ **Code Explanation**
-
-### **🔹 `User` Class (user.h & user.cpp)**
-- **Private Members**
-  - `account_number`, `user_name`, `account_balance`, `account_type`
-- **Public Methods**
-  - `createAccount()` → Takes user input & generates account.
-  - `displayAccount()` → Prints details of the account.
-  - `deposit(double amount)` → Adds money to the account.
-  - `withdraw(double amount)` → Deducts money from the account.
-  - `modifyAccount()` → Changes name & type of the account.
-  - `deleteAccount()` → Removes account data from the storage.
-  - `toJson()` → Converts the user object to a JSON format.
-  - `saveToJson()` → Saves all accounts to `data/accounts.json`.
-  - `loadFromJson()` → Reads account data from JSON and updates the `users` list.
-  - `exportToCSV()` → Exports all account data to `data/accounts.csv`.
-
-### **🔹 `getCurrentDate()` Function**
-- Returns the current date in `YYYYMMDD` format, which is used to generate unique account numbers by combining it with a static counter.
-
-### **🔹 Static Counter**
-- A **static counter** is used to generate unique account numbers. This ensures that each account number is distinct and incremented automatically with every new account creation.
-
-
-## 📂 **Data Storage Formats**
-
-### **🔹 JSON File Format (`data/accounts.json`)**
 ```json
 [
-    {
-        "account_number": "0000202502261",
-        "user_name": "John Doe",
-        "account_balance": 1000.50,
-        "account_type": "Savings"
-    }
+  {
+    "account_number": "0000202604181",
+    "user_name": "John Doe",
+    "account_balance": 1000.5,
+    "account_type": "Savings"
+  },
+  {
+    "account_number": "0000202604182",
+    "user_name": "Jane Smith",
+    "account_balance": 250.0,
+    "account_type": "Current"
+  }
 ]
 ```
 
-### **🔹 CSV File Format (`data/accounts.csv`)**
-```csv
-Account Number,Name,Balance,Type
-0000202502261,John Doe,1000.50,Savings
+## File and Directory Structure
+
+```text
+bank-management-system/
+├── .gitignore
+├── README.md
+├── Makefile
+├── data/
+│   ├── accounts.csv
+│   └── accounts.json
+├── include/
+│   ├── json.hpp
+│   └── user.h
+├── src/
+│   ├── main.cpp
+│   └── user.cpp
+├── tests/
+│   ├── catch.hpp
+│   └── user_test.cpp
+└── LICENSE
 ```
 
+## Test Suite
 
-## ❌ **Error Handling**
-✔ **Invalid Inputs** → If incorrect data is entered, prompts reappear for correction.  
-✔ **Insufficient Balance** → Withdrawals are blocked if the account has insufficient funds.  
-✔ **File Errors** → If JSON/CSV files fail to open, errors are displayed.
+The project includes unit, integration, and regression tests using Catch2.
 
+### Coverage Highlights
 
-## 🔧 **Industry Readiness & Best Practices**
-- **Memory Efficiency**  
-  ✅ Uses a global `vector<User>` to store all users, avoiding redundant data loading.  
-  ✅ A **static counter** for unique account number generation ensures efficient handling without conflicts.
+- Unit tests:
+  - Deposit behavior
+  - Withdraw success and failure behavior
+  - Account type serialization
+- Integration tests:
+  - Storage initialization creates data directory and files
+  - CSV startup loading with JSON synchronization
+  - CSV parsing with quoted fields
+- Regression tests:
+  - Persisted updates remain consistent after reload from CSV and JSON
 
-- **Modern C++ Practices**  
-  ✅ Structured serialization of objects using **nlohmann/json**.  
-  ✅ **RAII principles**: Destructor ensures proper memory management.  
-  ✅ No raw pointers—uses **smart memory management**.
+Run the full test suite with:
 
-- **Scalability & Maintainability**  
-  ✅ **Enum-based account types**: Future-proof design with extendable account types.  
-  ✅ **Global `unordered_map<Type, std::string>`** allows for efficient lookup of account types.  
-  ✅ The code avoids dependency on compiler-specific features, ensuring broader compatibility.
+```sh
+make test
+```
 
-- **Performance Not Sacrificed**  
-  ✅ Efficient handling of large datasets using **JSON** for storage.  
-  ✅ Optimized file I/O with stream-based handling of file operations.
+## Error Handling
 
+- Input validation for menu choices and transaction amounts
+- Insufficient balance checks for withdrawal
+- File I/O diagnostics through stderr and perror for open/write/read failures
+- Graceful handling of malformed CSV rows with warnings
+- JSON parse failures are reported with error details
 
-## 👥 **Contribution Guidelines**
-✅ Fork the repository.  
-✅ Make changes in a separate branch.  
-✅ Submit a pull request (PR) with a proper description of your changes.
+## Acknowledgment and Citation
 
+This project uses the nlohmann/json library for JSON parsing and serialization.
 
-## 📜 **License**
-This project is **open-source** under the **MIT License**.
+Lohmann, N. (2025). JSON for Modern C++ (Version 3.12.0) [Computer software]. https://github.com/nlohmann/json
+
+## Contribution Guidelines
+
+- Fork the repository.
+- Make changes in a separate branch.
+- Submit a pull request with a clear description of your updates.
 
 
