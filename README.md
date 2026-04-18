@@ -5,17 +5,19 @@
 ![Testing: Catch2](https://img.shields.io/badge/Testing-Catch2-25c2a0?style=for-the-badge)
 ![JSON: nlohmann/json](https://img.shields.io/badge/JSON-nlohmann%2Fjson-1f8ceb?style=for-the-badge)
 
-A lightweight C++ console banking application with account creation, update, delete, deposit, withdraw, and robust persistence.
+A lightweight C++ console banking application with account creation, authentication, account updates, transactions, and robust persistence.
 
 ## Features
 
 - Create accounts (Savings and Current)
+- Login with account number and password (SHA-256 hash verification)
 - View account details
-- Modify account name and type
+- Modify account name, account type, or both
 - Deposit and withdraw money
-- Delete accounts
 - CSV-first persistence on startup
 - Automatic JSON synchronization from CSV state
+- JSON fallback when CSV is unavailable
+- Signal handling for graceful exit message on SIGINT/SIGTERM
 - Integration and regression test coverage
 
 ## Table of Contents
@@ -76,37 +78,40 @@ make clean
 
 ### 1. Create Account
 
-- Enter name and account type.
+- Enter name, account type, and password (with confirmation).
 - A date-based account number is generated.
+- Password is stored as SHA-256 hash in persisted files.
 - State is persisted to CSV and synchronized to JSON.
 
-### 2. Display Account
+### 2. Login
 
 1. Enter account number.
-2. View number, name, balance, and account type.
+2. Enter password.
+3. On successful verification, enter the authenticated account menu.
 
-### 3. Modify Account
+### 3. Authenticated Account Menu
 
-1. Enter account number.
-2. Update name and account type.
+1. View Account
+2. Modify Account
+3. Deposit Money
+4. Withdraw Money
+5. Logout
+
+### 4. Modify Account
+
+1. Choose what to update: name, type, or both.
+2. Submit updated value(s).
 3. Changes are persisted immediately.
-
-### 4. Delete Account
-
-1. Enter account number.
-2. Account is removed from the in-memory state.
-3. CSV and JSON are updated.
 
 ### 5. Deposit and Withdraw
 
-1. Enter account number.
-2. Enter amount.
+1. Enter amount in authenticated session.
 3. On valid transactions, changes are persisted to disk.
 
-### 6. Export Accounts
+### 6. Logout and Exit
 
-1. Choose export option from the menu.
-2. CSV is rewritten from current state and JSON is synchronized.
+1. Logout returns to the top-level Create/Login/Exit menu.
+2. Exit and SIGINT/SIGTERM print the same goodbye message.
 
 ## Architecture and Persistence Model
 
@@ -114,6 +119,8 @@ make clean
   - `src/main.cpp` owns one `vector<User>` for consistent state management.
 - Startup source of truth:
   - Accounts are loaded from `data/accounts.csv` at program start.
+- Fallback behavior:
+  - If CSV is unavailable and JSON exists, JSON is loaded and CSV is initialized from JSON.
 - Disk persistence strategy:
   - Any mutating operation triggers `persist(users)`.
   - `persist(users)` writes `data/accounts.csv` and `data/accounts.json` from the same vector.
@@ -128,17 +135,21 @@ Core data members:
 
 - account_number
 - user_name
+- password_hash
 - account_balance
 - account_type
 
 Main behaviors:
 
-- `createAccount()`: reads name and type input and initializes a new account.
+- `createAccount()`: reads name, type, password, and initializes a new account.
 - `displayAccount()`: prints account details.
-- `modifyAccount()`: updates name and account type.
+- `modifyAccount()`: updates name, type, or both based on user choice.
 - `deposit(double amount)`: credits money to account balance.
 - `withdraw(double amount)`: debits money if sufficient balance exists.
 - `toJson()`: serializes a `User` object to JSON.
+- `setPassword(const std::string&)`: hashes and stores password with SHA-256.
+- `verifyPassword(const std::string&)`: verifies password by hash comparison.
+- `isPasswordPolicyValid(const std::string&)`: validates printable ASCII password policy.
 
 Persistence and synchronization helpers:
 
@@ -152,9 +163,10 @@ Persistence and synchronization helpers:
 ### Main Program Flow
 
 - `main()` in `src/main.cpp` loads user state from CSV at startup.
-- Menu operations mutate one in-memory `vector<User>` state.
-- Any mutation (`create`, `modify`, `delete`, `deposit`, `withdraw`) calls `persist(users)`.
-- Export also synchronizes JSON with current CSV-backed state.
+- Top-level menu exposes `Create Account`, `Login`, and `Exit`.
+- Successful authentication enters account session menu (`View`, `Modify`, `Deposit`, `Withdraw`, `Logout`).
+- Any mutation (`create`, `modify`, `deposit`, `withdraw`) calls `persist(users)`.
+- `SIGINT` and `SIGTERM` print the same exit message as regular `Exit`.
 
 ## Data Storage Formats
 
@@ -163,9 +175,9 @@ The application stores records in both CSV and JSON. CSV is read at startup, and
 ### CSV Format: data/accounts.csv
 
 ```csv
-Account Number,Name,Balance,Type
-0000202604181,John Doe,1000.50,Savings
-0000202604182,Jane Smith,250.00,Current
+Account Number,Name,Balance,Type,PasswordHash
+0000202604181,John Doe,1000.50,Savings,8f7d6f6a6a8f1a7c9b8c4f4b4c7e8a5d23f7f7d5c9a0b8f6a2d1b4e6c8f3a2b1
+0000202604182,Jane Smith,250.00,Current,41c4d5ea2f70bbf6296e92fcb8f9f7c4ed5f91c4ae9d8b6a9e4f6c2b8d7a0f13
 ```
 
 ### JSON Format: data/accounts.json
@@ -175,12 +187,14 @@ Account Number,Name,Balance,Type
   {
     "account_number": "0000202604181",
     "user_name": "John Doe",
+    "password_hash": "8f7d6f6a6a8f1a7c9b8c4f4b4c7e8a5d23f7f7d5c9a0b8f6a2d1b4e6c8f3a2b1",
     "account_balance": 1000.5,
     "account_type": "Savings"
   },
   {
     "account_number": "0000202604182",
     "user_name": "Jane Smith",
+    "password_hash": "41c4d5ea2f70bbf6296e92fcb8f9f7c4ed5f91c4ae9d8b6a9e4f6c2b8d7a0f13",
     "account_balance": 250.0,
     "account_type": "Current"
   }
@@ -219,12 +233,18 @@ The project includes unit, integration, and regression tests using Catch2.
   - Deposit behavior
   - Withdraw success and failure behavior
   - Account type serialization
+  - Password policy and hash determinism
+  - Modify account behavior (name-only, type-only, both)
 - Integration tests:
   - Storage initialization creates data directory and files
   - CSV startup loading with JSON synchronization
+  - JSON fallback when CSV is missing
+  - CSV precedence when both CSV and JSON exist
   - CSV parsing with quoted fields
 - Regression tests:
   - Persisted updates remain consistent after reload from CSV and JSON
+  - Password hash persistence and verification across reload
+  - Legacy CSV compatibility and stress scenarios
 
 Run the full test suite with:
 
@@ -235,6 +255,7 @@ make test
 ## Error Handling
 
 - Input validation for menu choices and transaction amounts
+- Password validation for printable ASCII characters excluding whitespace/control
 - Insufficient balance checks for withdrawal
 - File I/O diagnostics through stderr and perror for open/write/read failures
 - Graceful handling of malformed CSV rows with warnings

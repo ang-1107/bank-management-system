@@ -20,6 +20,7 @@ class User {
 private:
     std::string account_number;
     std::string user_name;
+    std::string password_hash;
     double account_balance;
     Type account_type;
 
@@ -42,7 +43,11 @@ public:
     // Getter for account_number
     std::string getAccountNumber() const; 
     std::string getUserName() const;
+    std::string getPasswordHash() const;
     Type getAccountType() const;
+    bool verifyPassword(const std::string& plainPassword) const;
+    void setPassword(const std::string& plainPassword);
+    static bool isPasswordPolicyValid(const std::string& plainPassword);
 
     // JSON Serialization
     json toJson() const;
@@ -62,6 +67,7 @@ public:
     // Get-Set Methods for Testing
     void setUserName(const std::string& name);
     void setAccountType(Type type);
+    void setPasswordHash(const std::string& hashValue);
     void setBalance(double balance);
     double getBalance() const;
 };

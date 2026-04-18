@@ -1,6 +1,8 @@
 #include "user.h"
 #include <algorithm>
+#include <array>
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <limits>
@@ -19,6 +21,116 @@ namespace {
 const char* kDataDir = "data";
 const char* kCsvPath = "data/accounts.csv";
 const char* kJsonPath = "data/accounts.json";
+const char* kPasswordHeader = "PasswordHash";
+
+bool isAllowedPasswordChar(unsigned char ch) {
+    // Allow only printable ASCII characters excluding spaces and control characters.
+    return ch >= 33U && ch <= 126U;
+}
+
+inline uint32_t rotr(uint32_t value, uint32_t shift) {
+    return (value >> shift) | (value << (32U - shift));
+}
+
+string sha256(const string& input) {
+    // SHA-256 round constants from FIPS 180-4 (part of the standard algorithm).
+    static constexpr uint32_t k[64] = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+        0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+        0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+        0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+        0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+        0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+        0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    };
+
+    array<uint32_t, 8> h = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    };
+
+    vector<uint8_t> data(input.begin(), input.end());
+    uint64_t bitLength = static_cast<uint64_t>(data.size()) * 8ULL;
+
+    data.push_back(0x80);
+    while ((data.size() % 64) != 56) {
+        data.push_back(0x00);
+    }
+
+    for (int i = 7; i >= 0; --i) {
+        data.push_back(static_cast<uint8_t>((bitLength >> (8 * i)) & 0xFF));
+    }
+
+    for (size_t chunk = 0; chunk < data.size(); chunk += 64) {
+        uint32_t w[64] = {0};
+
+        for (int i = 0; i < 16; ++i) {
+            const size_t offset = chunk + static_cast<size_t>(i) * 4;
+            w[i] = (static_cast<uint32_t>(data[offset]) << 24) |
+                   (static_cast<uint32_t>(data[offset + 1]) << 16) |
+                   (static_cast<uint32_t>(data[offset + 2]) << 8) |
+                    static_cast<uint32_t>(data[offset + 3]);
+        }
+
+        for (int i = 16; i < 64; ++i) {
+            const uint32_t s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+            const uint32_t s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        }
+
+        uint32_t a = h[0];
+        uint32_t b = h[1];
+        uint32_t c = h[2];
+        uint32_t d = h[3];
+        uint32_t e = h[4];
+        uint32_t f = h[5];
+        uint32_t g = h[6];
+        uint32_t hh = h[7];
+
+        for (int i = 0; i < 64; ++i) {
+            const uint32_t s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+            const uint32_t ch = (e & f) ^ ((~e) & g);
+            const uint32_t temp1 = hh + s1 + ch + k[i] + w[i];
+            const uint32_t s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+            const uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+            const uint32_t temp2 = s0 + maj;
+
+            hh = g;
+            g = f;
+            f = e;
+            e = d + temp1;
+            d = c;
+            c = b;
+            b = a;
+            a = temp1 + temp2;
+        }
+
+        h[0] += a;
+        h[1] += b;
+        h[2] += c;
+        h[3] += d;
+        h[4] += e;
+        h[5] += f;
+        h[6] += g;
+        h[7] += hh;
+    }
+
+    stringstream ss;
+    ss << hex << setfill('0');
+    for (uint32_t value : h) {
+        ss << setw(8) << value;
+    }
+    return ss.str();
+}
 
 string escapeCsvField(const string& field) {
     bool needsQuotes = (field.find(',') != string::npos) || (field.find('"') != string::npos);
@@ -149,6 +261,7 @@ User::User() {
     counter += 1;
     account_number = "0000" + getCurrentDate() + to_string(counter);
     user_name = "";
+    password_hash = "";
     account_balance = 0.0;
     account_type = SAVINGS;
 }
@@ -179,6 +292,29 @@ void User::createAccount() {
     cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
     account_type = static_cast<Type>(accTypeInput);
+
+    string password;
+    string confirmPassword;
+    while (true) {
+        cout << "Set Password: ";
+        getline(cin, password);
+
+        if (!isPasswordPolicyValid(password)) {
+            cout << "Invalid password! Use printable ASCII except spaces and control characters." << endl;
+            continue;
+        }
+
+        cout << "Confirm Password: ";
+        getline(cin, confirmPassword);
+        if (confirmPassword != password) {
+            cout << "Passwords do not match. Try again." << endl;
+            continue;
+        }
+
+        break;
+    }
+
+    setPassword(password);
     cout << "Account " << account_number << " created Successfully!" << endl;
 }
 
@@ -218,26 +354,45 @@ bool User::withdraw(double amount) {
 void User::modifyAccount() {
     cout << "Modify Account Details" << endl;
     cout << "Current Name: " << user_name << endl;
-    cout << "Enter New Name: ";
-    getline(cin >> ws, user_name);
-
-    while (user_name.empty()) {
-        cout << "Name cannot be empty. Enter New Name: ";
-        getline(cin >> ws, user_name);
-    }
-
-    int accTypeInput;
     cout << "Current Account Type: " << accountTypeMap.at(account_type) << endl;
-    cout << "Enter New Type (0 for Savings, 1 for Current): ";
-    while (!(cin >> accTypeInput) || (accTypeInput != 0 && accTypeInput != 1)) {
+    cout << "Choose what to modify:\n";
+    cout << "1. Name\n";
+    cout << "2. Account Type\n";
+    cout << "3. Both\n";
+    cout << "Enter your choice: ";
+
+    int modifyChoice;
+    while (!(cin >> modifyChoice) || (modifyChoice < 1 || modifyChoice > 3)) {
         cin.clear();
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
-        cout << "Invalid choice! Enter 0 for Savings or 1 for Current: ";
+        cout << "Invalid choice! Enter 1, 2, or 3: ";
     }
 
     cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-    account_type = static_cast<Type>(accTypeInput);
+    if (modifyChoice == 1 || modifyChoice == 3) {
+        cout << "Enter New Name: ";
+        getline(cin >> ws, user_name);
+
+        while (user_name.empty()) {
+            cout << "Name cannot be empty. Enter New Name: ";
+            getline(cin >> ws, user_name);
+        }
+    }
+
+    if (modifyChoice == 2 || modifyChoice == 3) {
+        int accTypeInput;
+        cout << "Enter New Type (0 for Savings, 1 for Current): ";
+        while (!(cin >> accTypeInput) || (accTypeInput != 0 && accTypeInput != 1)) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "Invalid choice! Enter 0 for Savings or 1 for Current: ";
+        }
+
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        account_type = static_cast<Type>(accTypeInput);
+    }
+
     cout << "Account Details Updated Successfully!" << endl;
 }
 
@@ -246,6 +401,7 @@ json User::toJson() const {
     return json{
         {"account_number", account_number},
         {"user_name", user_name},
+        {"password_hash", password_hash},
         {"account_balance", account_balance},
         {"account_type", accountTypeMap.at(account_type)}
     };
@@ -300,6 +456,7 @@ vector<User> User::loadFromJson() {
             User user;
             user.account_number = jUser.value("account_number", "");
             user.user_name = jUser.value("user_name", "");
+            user.password_hash = jUser.value("password_hash", "");
             user.account_balance = jUser.value("account_balance", 0.0);
 
             Type parsed = SAVINGS;
@@ -331,13 +488,14 @@ bool User::saveToCsv(const vector<User>& users) {
         return false;
     }
 
-    outFile << "Account Number,Name,Balance,Type\n";
+    outFile << "Account Number,Name,Balance,Type," << kPasswordHeader << "\n";
     outFile << fixed << setprecision(2);
     for (const auto& user : users) {
         outFile << escapeCsvField(user.account_number) << ","
                 << escapeCsvField(user.user_name) << ","
                 << user.account_balance << ","
-                << escapeCsvField(accountTypeMap.at(user.account_type)) << "\n";
+                << escapeCsvField(accountTypeMap.at(user.account_type)) << ","
+                << escapeCsvField(user.password_hash) << "\n";
     }
 
     if (!outFile.good()) {
@@ -359,6 +517,15 @@ vector<User> User::loadFromCsv() {
     ifstream inFile(kCsvPath);
     if (!inFile.is_open()) {
         if (errno == ENOENT) {
+            std::error_code ec;
+            if (std::filesystem::exists(kJsonPath, ec)) {
+                loadedUsers = loadFromJson();
+                if (!saveToCsv(loadedUsers)) {
+                    cerr << "Error: Failed to initialize CSV from JSON fallback data." << endl;
+                }
+                return loadedUsers;
+            }
+
             if (!persist(loadedUsers)) {
                 cerr << "Error: Failed to initialize storage files in data/." << endl;
             }
@@ -388,7 +555,7 @@ vector<User> User::loadFromCsv() {
         }
 
         vector<string> fields = splitCsvLine(line);
-        if (fields.size() != 4) {
+        if (fields.size() != 4 && fields.size() != 5) {
             cerr << "Warning: Skipping malformed CSV row at line " << lineNumber << "." << endl;
             continue;
         }
@@ -410,6 +577,13 @@ vector<User> User::loadFromCsv() {
             continue;
         }
         user.account_type = parsedType;
+
+        if (fields.size() == 5) {
+            user.password_hash = fields[4];
+        } else {
+            user.password_hash = "";
+        }
+
         loadedUsers.push_back(user);
     }
 
@@ -444,8 +618,34 @@ std::string User::getUserName() const {
     return user_name;
 }
 
+std::string User::getPasswordHash() const {
+    return password_hash;
+}
+
 Type User::getAccountType() const {
     return account_type;
+}
+
+bool User::verifyPassword(const std::string& plainPassword) const {
+    return password_hash == sha256(plainPassword);
+}
+
+void User::setPassword(const std::string& plainPassword) {
+    password_hash = sha256(plainPassword);
+}
+
+bool User::isPasswordPolicyValid(const std::string& plainPassword) {
+    if (plainPassword.empty()) {
+        return false;
+    }
+
+    for (unsigned char ch : plainPassword) {
+        if (!isAllowedPasswordChar(ch)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 // Get-Set Methods for Testing
@@ -456,6 +656,11 @@ void User::setUserName(const std::string& name) {
 
 void User::setAccountType(Type type) {
     this->account_type = type;
+    return;
+}
+
+void User::setPasswordHash(const std::string& hashValue) {
+    this->password_hash = hashValue;
     return;
 }
 

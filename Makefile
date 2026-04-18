@@ -8,7 +8,7 @@ USER_SRC := src/user.cpp
 OBJS := main.o user.o
 
 TARGET := bank.exe
-TEST := user_tests.exe
+TEST := test.exe
 
 all: $(TARGET)
 
