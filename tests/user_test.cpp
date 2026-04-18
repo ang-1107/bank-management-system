@@ -407,7 +407,7 @@ TEST_CASE("Per-user transaction file stores serial and epoch", "[integration][tr
     std::vector<User> users{u};
     REQUIRE(User::persist(users));
 
-    fs::path txFile = fs::path("data") / "Tx_User_transactions.csv";
+    fs::path txFile = fs::path("data") / "transactions" / "Tx_User_transactions.csv";
     REQUIRE(fs::exists(txFile));
 
     std::ifstream in(txFile);
@@ -457,7 +457,7 @@ TEST_CASE("Current account does not maintain transaction file", "[integration][c
     REQUIRE(User::persist(std::vector<User>{u}));
     User::clearTimeOverrideForTesting();
 
-    fs::path txFile = fs::path("data") / "No_Tx_Current_transactions.csv";
+    fs::path txFile = fs::path("data") / "transactions" / "No_Tx_Current_transactions.csv";
     REQUIRE_FALSE(fs::exists(txFile));
 }
 

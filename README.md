@@ -7,6 +7,20 @@
 
 A lightweight C++ console banking application with account creation, authentication, account updates, transactions, and robust persistence.
 
+## Table of Contents
+
+1. [Features](#features)
+2. [Installation and Setup](#installation-and-setup)
+3. [Usage Guide](#usage-guide)
+4. [Architecture and Persistence Model](#architecture-and-persistence-model)
+5. [Code Explanation](#code-explanation)
+6. [Data Storage Formats](#data-storage-formats)
+7. [File and Directory Structure](#file-and-directory-structure)
+8. [Test Suite](#test-suite)
+9. [Error Handling](#error-handling)
+10. [Acknowledgment](#acknowledgment)
+11. [Contribution Guidelines](#contribution-guidelines)
+
 ## Features
 
 - Create accounts (Savings and Current)
@@ -21,19 +35,6 @@ A lightweight C++ console banking application with account creation, authenticat
 - Per-user transaction history files with serial number, epoch timestamp, and amount (Savings accounts only)
 - Signal handling for graceful exit message on SIGINT/SIGTERM
 - Integration and regression test coverage
-
-## Table of Contents
-
-1. [Installation and Setup](#installation-and-setup)
-2. [Usage Guide](#usage-guide)
-3. [Architecture and Persistence Model](#architecture-and-persistence-model)
-4. [Code Explanation](#code-explanation)
-5. [Data Storage Formats](#data-storage-formats)
-6. [File and Directory Structure](#file-and-directory-structure)
-7. [Test Suite](#test-suite)
-8. [Error Handling](#error-handling)
-9. [Acknowledgment and Citation](#acknowledgment-and-citation)
-10. [Contribution Guidelines](#contribution-guidelines)
 
 ## Installation and Setup
 
@@ -135,7 +136,7 @@ For Current accounts, 24-hour volume is not enforced, not tracked, and not shown
 - Disk persistence strategy:
   - Any mutating operation triggers `persist(users)`.
   - `persist(users)` writes `data/accounts.csv` and `data/accounts.json` from the same vector.
-  - `persist(users)` also writes per-user transaction files in `data/`.
+  - `persist(users)` also writes per-user transaction files in `data/transactions/`.
 - Directory handling:
   - The `data` directory is created automatically if it does not exist.
 - Sliding-window enforcement:
@@ -202,7 +203,7 @@ Account Number,Name,Balance,Type,PasswordHash
 0000202604182,Jane Smith,250.00,Current,41c4d5ea2f70bbf6296e92fcb8f9f7c4ed5f91c4ae9d8b6a9e4f6c2b8d7a0f13
 ```
 
-### Per-user Transaction History Format: data/<user_name>_transactions.csv
+### Per-user Transaction History Format: data/transactions/<user_name>_transactions.csv
 
 This file is maintained for Savings accounts only.
 
@@ -244,7 +245,9 @@ bank-management-system/
 ├── Makefile
 ├── data/
 │   ├── accounts.csv
-│   └── accounts.json
+│   ├── accounts.json
+│   └── transactions/
+│       └── <user_name>_transactions.csv
 ├── include/
 │   ├── json.hpp
 │   └── user.h
@@ -303,7 +306,7 @@ make test
 - Graceful handling of malformed CSV rows with warnings
 - JSON parse failures are reported with error details
 
-## Acknowledgment and Citation
+## Acknowledgment
 
 This project uses the nlohmann/json library for JSON parsing and serialization.
 

@@ -22,6 +22,7 @@ int64_t User::time_override_epoch_seconds = -1;
 
 namespace {
 const char* kDataDir = "data";
+const char* kTransactionsDir = "data/transactions";
 const char* kCsvPath = "data/accounts.csv";
 const char* kJsonPath = "data/accounts.json";
 const char* kPasswordHeader = "PasswordHash";
@@ -250,7 +251,7 @@ std::string User::sanitizeUserNameForFile(const std::string& userName) {
 }
 
 std::string User::transactionFilePath() const {
-    return string(kDataDir) + "/" + sanitizeUserNameForFile(user_name) + kTransactionsSuffix;
+    return string(kTransactionsDir) + "/" + sanitizeUserNameForFile(user_name) + kTransactionsSuffix;
 }
 
 bool User::loadTransactionsForUser(User& user) {
@@ -296,6 +297,13 @@ bool User::loadTransactionsForUser(User& user) {
 
 bool User::saveTransactionsForUser(const User& user) {
     if (!ensureDataDirectory()) {
+        return false;
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories(kTransactionsDir, ec);
+    if (ec) {
+        cerr << "Error: Could not create transactions directory: " << ec.message() << endl;
         return false;
     }
 
