@@ -50,6 +50,12 @@ bool runAuthenticatedSession(vector<User>& users, size_t currentIndex) {
         switch (choice) {
             case 1:
                 users[currentIndex].displayAccount();
+                if (users[currentIndex].getAccountType() == SAVINGS) {
+                    cout << "24h Transaction Volume: $" << fixed << setprecision(2)
+                         << users[currentIndex].getCurrent24hVolume() << endl;
+                    cout << "Remaining 24h Volume: $" << fixed << setprecision(2)
+                         << users[currentIndex].getRemaining24hVolume() << endl;
+                }
                 break;
             case 2:
                 users[currentIndex].modifyAccount();

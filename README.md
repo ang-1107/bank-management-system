@@ -12,11 +12,13 @@ A lightweight C++ console banking application with account creation, authenticat
 - Create accounts (Savings and Current)
 - Login with account number and password (SHA-256 hash verification)
 - View account details
-- Modify account name, account type, or both
+- Modify account name, account type, or both (account type change cooldown: once per 24 hours)
 - Deposit and withdraw money
 - CSV-first persistence on startup
 - Automatic JSON synchronization from CSV state
 - JSON fallback when CSV is unavailable
+- Rolling 24-hour transaction volume limit (`<= 100000`) for Savings accounts only
+- Per-user transaction history files with serial number, epoch timestamp, and amount (Savings accounts only)
 - Signal handling for graceful exit message on SIGINT/SIGTERM
 - Integration and regression test coverage
 
@@ -97,16 +99,25 @@ make clean
 4. Withdraw Money
 5. Logout
 
+When you choose `View Account` for a Savings account, the app displays:
+- current rolling 24-hour transaction volume
+- remaining allowable volume in the same 24-hour window
+
+Because this is a sliding window, these values are recalculated from current time each time you run `View Account` and can change between consecutive checks.
+
+For Current accounts, 24-hour volume is not enforced, not tracked, and not shown.
+
 ### 4. Modify Account
 
 1. Choose what to update: name, type, or both.
-2. Submit updated value(s).
-3. Changes are persisted immediately.
+2. Account type can be changed at most once in 24 hours (cooldown applies in both directions).
+3. Submit updated value(s).
+4. Changes are persisted immediately.
 
 ### 5. Deposit and Withdraw
 
 1. Enter amount in authenticated session.
-3. On valid transactions, changes are persisted to disk.
+2. On valid transactions, changes are persisted to disk.
 
 ### 6. Logout and Exit
 
@@ -124,8 +135,17 @@ make clean
 - Disk persistence strategy:
   - Any mutating operation triggers `persist(users)`.
   - `persist(users)` writes `data/accounts.csv` and `data/accounts.json` from the same vector.
+  - `persist(users)` also writes per-user transaction files in `data/`.
 - Directory handling:
   - The `data` directory is created automatically if it does not exist.
+- Sliding-window enforcement:
+  - Savings transactions compute rolling 24-hour volume using epoch timestamps.
+  - If `current_volume + abs(new_amount) > 100000`, the Savings transaction is rejected.
+  - Current transactions bypass this check and do not maintain rolling-volume history.
+  - Changing account type resets rolling-volume state.
+- Account type change cooldown:
+  - A user can change account type only once every 24 hours.
+  - Last type-change time is stored per user in account persistence data.
 
 ## Code Explanation
 
@@ -150,6 +170,8 @@ Main behaviors:
 - `setPassword(const std::string&)`: hashes and stores password with SHA-256.
 - `verifyPassword(const std::string&)`: verifies password by hash comparison.
 - `isPasswordPolicyValid(const std::string&)`: validates printable ASCII password policy.
+- `getCurrent24hVolume()`: returns current rolling 24-hour transaction volume for Savings accounts.
+- `getRemaining24hVolume()`: returns remaining allowable volume in the window for Savings accounts.
 
 Persistence and synchronization helpers:
 
@@ -179,6 +201,18 @@ Account Number,Name,Balance,Type,PasswordHash
 0000202604181,John Doe,1000.50,Savings,8f7d6f6a6a8f1a7c9b8c4f4b4c7e8a5d23f7f7d5c9a0b8f6a2d1b4e6c8f3a2b1
 0000202604182,Jane Smith,250.00,Current,41c4d5ea2f70bbf6296e92fcb8f9f7c4ed5f91c4ae9d8b6a9e4f6c2b8d7a0f13
 ```
+
+### Per-user Transaction History Format: data/<user_name>_transactions.csv
+
+This file is maintained for Savings accounts only.
+
+```csv
+SerialNumber,EpochSeconds,Amount
+1,1713456000,1200.00
+2,1713459600,-300.00
+```
+
+`Amount` is signed (`+` deposit, `-` withdrawal). Rolling volume uses `abs(Amount)` over the latest 24 hours.
 
 ### JSON Format: data/accounts.json
 
@@ -227,6 +261,8 @@ bank-management-system/
 
 The project includes unit, integration, and regression tests using Catch2.
 
+Latest verified run: 28 test cases and 119 assertions.
+
 ### Coverage Highlights
 
 - Unit tests:
@@ -235,16 +271,22 @@ The project includes unit, integration, and regression tests using Catch2.
   - Account type serialization
   - Password policy and hash determinism
   - Modify account behavior (name-only, type-only, both)
+  - 24-hour volume boundary behavior
+  - Current-account bypass of 24-hour volume checks
+  - Account-type switch reset behavior for rolling volume
 - Integration tests:
   - Storage initialization creates data directory and files
   - CSV startup loading with JSON synchronization
   - JSON fallback when CSV is missing
   - CSV precedence when both CSV and JSON exist
   - CSV parsing with quoted fields
+  - Per-user Savings transactions file format and serial numbering
+  - Current-account transaction file absence
 - Regression tests:
   - Persisted updates remain consistent after reload from CSV and JSON
   - Password hash persistence and verification across reload
   - Legacy CSV compatibility and stress scenarios
+  - Reloaded rolling-volume correctness from persisted transaction history
 
 Run the full test suite with:
 
