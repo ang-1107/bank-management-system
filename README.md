@@ -1,8 +1,9 @@
 # Bank Management System
 
 ![Made with C++](https://img.shields.io/badge/Made%20with-C%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white)
-![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
 ![Testing: Catch2](https://img.shields.io/badge/Testing-Catch2-25c2a0?style=for-the-badge)
+![Design: OOP](https://img.shields.io/badge/Design-OOP-2E8B57?style=for-the-badge)
+![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
 
 A lightweight C++ console banking application with account creation, authentication, account updates, transactions, and robust persistence.
 
@@ -17,7 +18,8 @@ A lightweight C++ console banking application with account creation, authenticat
 7. [File and Directory Structure](#file-and-directory-structure)
 8. [Test Suite](#test-suite)
 9. [Error Handling](#error-handling)
-10. [Contribution Guidelines](#contribution-guidelines)
+10. [Optional CSV to JSON Utility](#optional-csv-to-json-utility)
+11. [Contribution Guidelines](#contribution-guidelines)
 
 ## Features
 
@@ -231,14 +233,14 @@ bank-management-system/
 
 The project includes unit, integration, and regression tests using Catch2.
 
-Latest verified run: 28 test cases and 119 assertions.
+Latest verified run: 26 test cases and 104 assertions.
 
 ### Coverage Highlights
 
 - Unit tests:
   - Deposit behavior
   - Withdraw success and failure behavior
-  - Account type serialization
+  - Account type set/get behavior
   - Password policy and hash determinism
   - Modify account behavior (name-only, type-only, both)
   - 24-hour volume boundary behavior
@@ -269,6 +271,16 @@ make test
 - Insufficient balance checks for withdrawal
 - File I/O diagnostics through stderr and perror for open/write/read failures
 - Graceful handling of malformed CSV rows with warnings
+
+## Optional CSV to JSON Utility
+
+If you want JSON output for external tooling, use the helper script:
+
+```sh
+python scripts/csv_to_json.py data/accounts.csv data/accounts.json
+```
+
+This conversion is optional and does not affect the application's CSV-only runtime persistence.
 
 ## Contribution Guidelines
 
