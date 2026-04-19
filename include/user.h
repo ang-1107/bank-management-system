@@ -9,9 +9,6 @@
 #include <vector>       // For storing multiple user objects
 #include <cstddef>      // For size_t
 #include <cstdint>      // For fixed width integer types
-#include "json.hpp"     // JSON library for serialization
-
-using json = nlohmann::json;    // Alias for easier usage
 
 // Enum for account types
 typedef enum Type_ { SAVINGS = 0, CURRENT = 1 } Type;
@@ -72,19 +69,14 @@ public:
     static void setTimeOverrideForTesting(int64_t epochSeconds);
     static void clearTimeOverrideForTesting();
 
-    // JSON Serialization
-    json toJson() const;
-    static bool saveToJson(const std::vector<User>& users);
-    static std::vector<User> loadFromJson();
-
     // CSV Storage
     static bool saveToCsv(const std::vector<User>& users);
     static std::vector<User> loadFromCsv();
 
-    // Write both CSV and JSON from the same source vector
+    // Persist canonical CSV data and per-user transaction files
     static bool persist(const std::vector<User>& users);
 
-    // CSV Export alias
+    // CSV export alias
     static bool exportToCSV(const std::vector<User>& users);
 
     // Get-Set Methods for Testing

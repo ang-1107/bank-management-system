@@ -15,13 +15,13 @@ all: $(TARGET)
 main.o: $(MAIN_SRC) include/user.h
 	$(CXX) $(CXXFLAGS) -c $(MAIN_SRC) -o $@
 
-user.o: $(USER_SRC) include/user.h include/json.hpp
+user.o: $(USER_SRC) include/user.h
 	$(CXX) $(CXXFLAGS) -c $(USER_SRC) -o $@
 
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET)
 
-test: tests/user_test.cpp $(USER_SRC) include/user.h include/json.hpp
+test: tests/user_test.cpp $(USER_SRC) include/user.h
 	$(CXX) $(CXXFLAGS) tests/user_test.cpp $(USER_SRC) -o $(TEST)
 	./$(TEST)
 

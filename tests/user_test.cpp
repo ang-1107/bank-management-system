@@ -81,13 +81,12 @@ TEST_CASE("Withdraw fails with insufficient balance", "[withdraw]") {
     REQUIRE(u.getBalance() == Approx(50.0));
 }
 
-TEST_CASE("Account type is correctly set and exported", "[account_type]") {
+TEST_CASE("Account type is correctly set", "[account_type]") {
     User u = createTestUser("Typed User", CURRENT);
-    json j = u.toJson();
-    REQUIRE(j["account_type"] == "Current");
+    REQUIRE(u.getAccountType() == CURRENT);
 }
 
-TEST_CASE("Persist creates data directory and both files", "[integration][io]") {
+TEST_CASE("Persist creates data directory and CSV file", "[integration][io]") {
     CwdGuard guard;
     fs::path root = prepareWorkspace("persist_creates_files");
     fs::current_path(root);
@@ -99,10 +98,9 @@ TEST_CASE("Persist creates data directory and both files", "[integration][io]") 
 
     REQUIRE(fs::exists("data"));
     REQUIRE(fs::exists("data/accounts.csv"));
-    REQUIRE(fs::exists("data/accounts.json"));
 }
 
-TEST_CASE("CSV is startup source and JSON is synchronized", "[integration][startup][sync]") {
+TEST_CASE("CSV is startup source of truth", "[integration][startup]") {
     CwdGuard guard;
     fs::path root = prepareWorkspace("csv_startup_sync");
     fs::current_path(root);
@@ -132,9 +130,6 @@ TEST_CASE("CSV is startup source and JSON is synchronized", "[integration][start
     REQUIRE(alice->getBalance() == Approx(120.50));
     REQUIRE(alice->getAccountType() == SAVINGS);
     REQUIRE(bob->getAccountType() == CURRENT);
-
-    std::vector<User> loadedFromJson = User::loadFromJson();
-    REQUIRE(loadedFromJson.size() == loaded.size());
 }
 
 TEST_CASE("Regression: persisted updates are reloaded consistently", "[regression][persistence]") {
@@ -153,10 +148,6 @@ TEST_CASE("Regression: persisted updates are reloaded consistently", "[regressio
     REQUIRE(loaded.size() == 1);
     REQUIRE(loaded[0].getUserName() == "Regression User");
     REQUIRE(loaded[0].getBalance() == Approx(125.0));
-
-    std::vector<User> loadedFromJson = User::loadFromJson();
-    REQUIRE(loadedFromJson.size() == 1);
-    REQUIRE(loadedFromJson[0].getBalance() == Approx(125.0));
 }
 
 TEST_CASE("CSV parsing supports quoted commas in names", "[integration][csv]") {
@@ -194,26 +185,6 @@ TEST_CASE("Password is stored as hash and verified on reload", "[regression][aut
     REQUIRE(loaded[0].getPasswordHash() != "my-secret-password");
 }
 
-TEST_CASE("JSON fallback is used only when CSV is missing", "[integration][fallback]") {
-    CwdGuard guard;
-    fs::path root = prepareWorkspace("json_fallback_only");
-    fs::current_path(root);
-
-    std::vector<User> users;
-    User u = createTestUser("Fallback User", CURRENT, 99.0);
-    u.setPassword("fallback-pass");
-    users.push_back(u);
-
-    REQUIRE(User::saveToJson(users));
-    REQUIRE_FALSE(fs::exists("data/accounts.csv"));
-
-    std::vector<User> loaded = User::loadFromCsv();
-    REQUIRE(loaded.size() == 1);
-    REQUIRE(loaded[0].getUserName() == "Fallback User");
-    REQUIRE(loaded[0].verifyPassword("fallback-pass"));
-    REQUIRE(fs::exists("data/accounts.csv"));
-}
-
 TEST_CASE("Password policy allows printable ASCII except whitespace/control", "[edge][auth]") {
     REQUIRE(User::isPasswordPolicyValid("AbC123!@#_+-=[]{}|;:',.<>/?`~\\\""));
     REQUIRE_FALSE(User::isPasswordPolicyValid(""));
@@ -238,33 +209,6 @@ TEST_CASE("Password hash shape and determinism", "[edge][auth]") {
 
     u.setPassword("Different!Pass123");
     REQUIRE(first != u.getPasswordHash());
-}
-
-TEST_CASE("CSV takes precedence over JSON when both exist", "[weird][fallback]") {
-    CwdGuard guard;
-    fs::path root = prepareWorkspace("csv_precedence_over_json");
-    fs::current_path(root);
-
-    fs::create_directories("data");
-    {
-        std::ofstream csv("data/accounts.csv");
-        REQUIRE(csv.is_open());
-        csv << "Account Number,Name,Balance,Type,PasswordHash\n";
-        User hashUser;
-        hashUser.setPassword("csv-pass");
-        csv << "000020260418901,CSV User,10.00,Savings," << hashUser.getPasswordHash() << "\n";
-    }
-
-    std::vector<User> jsonUsers;
-    User jsonUser = createTestUser("JSON User", CURRENT, 999.0);
-    jsonUser.setPassword("json-pass");
-    jsonUsers.push_back(jsonUser);
-    REQUIRE(User::saveToJson(jsonUsers));
-
-    std::vector<User> loaded = User::loadFromCsv();
-    REQUIRE(loaded.size() == 1);
-    REQUIRE(loaded[0].getUserName() == "CSV User");
-    REQUIRE(loaded[0].verifyPassword("csv-pass"));
 }
 
 TEST_CASE("Legacy 4-column CSV rows remain readable", "[regression][csv]") {

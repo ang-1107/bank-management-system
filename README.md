@@ -3,7 +3,6 @@
 ![Made with C++](https://img.shields.io/badge/Made%20with-C%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white)
 ![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
 ![Testing: Catch2](https://img.shields.io/badge/Testing-Catch2-25c2a0?style=for-the-badge)
-![JSON: nlohmann/json](https://img.shields.io/badge/JSON-nlohmann%2Fjson-1f8ceb?style=for-the-badge)
 
 A lightweight C++ console banking application with account creation, authentication, account updates, transactions, and robust persistence.
 
@@ -18,8 +17,7 @@ A lightweight C++ console banking application with account creation, authenticat
 7. [File and Directory Structure](#file-and-directory-structure)
 8. [Test Suite](#test-suite)
 9. [Error Handling](#error-handling)
-10. [Acknowledgment](#acknowledgment)
-11. [Contribution Guidelines](#contribution-guidelines)
+10. [Contribution Guidelines](#contribution-guidelines)
 
 ## Features
 
@@ -29,8 +27,6 @@ A lightweight C++ console banking application with account creation, authenticat
 - Modify account name, account type, or both (account type change cooldown: once per 24 hours)
 - Deposit and withdraw money
 - CSV-first persistence on startup
-- Automatic JSON synchronization from CSV state
-- JSON fallback when CSV is unavailable
 - Rolling 24-hour transaction volume limit (`<= 100000`) for Savings accounts only
 - Per-user transaction history files with serial number, epoch timestamp, and amount (Savings accounts only)
 - Signal handling for graceful exit message on SIGINT/SIGTERM
@@ -42,7 +38,6 @@ A lightweight C++ console banking application with account creation, authenticat
 
 - C++ compiler (GCC, Clang, MSVC, etc.)
 - C++17 or later
-- Bundled nlohmann/json header in include/json.hpp
 
 ### Build and Run
 
@@ -84,7 +79,7 @@ make clean
 - Enter name, account type, and password (with confirmation).
 - A date-based account number is generated.
 - Password is stored as SHA-256 hash in persisted files.
-- State is persisted to CSV and synchronized to JSON.
+- State is persisted to CSV.
 
 ### 2. Login
 
@@ -131,11 +126,9 @@ For Current accounts, 24-hour volume is not enforced, not tracked, and not shown
   - `src/main.cpp` owns one `vector<User>` for consistent state management.
 - Startup source of truth:
   - Accounts are loaded from `data/accounts.csv` at program start.
-- Fallback behavior:
-  - If CSV is unavailable and JSON exists, JSON is loaded and CSV is initialized from JSON.
 - Disk persistence strategy:
   - Any mutating operation triggers `persist(users)`.
-  - `persist(users)` writes `data/accounts.csv` and `data/accounts.json` from the same vector.
+  - `persist(users)` writes `data/accounts.csv`.
   - `persist(users)` also writes per-user transaction files in `data/transactions/`.
 - Directory handling:
   - The `data` directory is created automatically if it does not exist.
@@ -167,7 +160,6 @@ Main behaviors:
 - `modifyAccount()`: updates name, type, or both based on user choice.
 - `deposit(double amount)`: credits money to account balance.
 - `withdraw(double amount)`: debits money if sufficient balance exists.
-- `toJson()`: serializes a `User` object to JSON.
 - `setPassword(const std::string&)`: hashes and stores password with SHA-256.
 - `verifyPassword(const std::string&)`: verifies password by hash comparison.
 - `isPasswordPolicyValid(const std::string&)`: validates printable ASCII password policy.
@@ -178,10 +170,8 @@ Persistence and synchronization helpers:
 
 - `loadFromCsv()`: startup read path and source of truth.
 - `saveToCsv(const std::vector<User>&)`: writes canonical CSV data.
-- `loadFromJson()`: JSON read helper used for verification/sync checks.
-- `saveToJson(const std::vector<User>&)`: writes synchronized JSON snapshot.
-- `persist(const std::vector<User>&)`: writes both CSV and JSON from the same vector.
-- `exportToCSV(const std::vector<User>&)`: export entry point that keeps JSON in sync.
+- `persist(const std::vector<User>&)`: writes CSV and per-user transaction files.
+- `exportToCSV(const std::vector<User>&)`: CSV export entry point.
 
 ### Main Program Flow
 
@@ -193,7 +183,7 @@ Persistence and synchronization helpers:
 
 ## Data Storage Formats
 
-The application stores records in both CSV and JSON. CSV is read at startup, and JSON is maintained as a synchronized mirror.
+The application stores records in CSV files.
 
 ### CSV Format: data/accounts.csv
 
@@ -215,27 +205,6 @@ SerialNumber,EpochSeconds,Amount
 
 `Amount` is signed (`+` deposit, `-` withdrawal). Rolling volume uses `abs(Amount)` over the latest 24 hours.
 
-### JSON Format: data/accounts.json
-
-```json
-[
-  {
-    "account_number": "0000202604181",
-    "user_name": "John Doe",
-    "password_hash": "8f7d6f6a6a8f1a7c9b8c4f4b4c7e8a5d23f7f7d5c9a0b8f6a2d1b4e6c8f3a2b1",
-    "account_balance": 1000.5,
-    "account_type": "Savings"
-  },
-  {
-    "account_number": "0000202604182",
-    "user_name": "Jane Smith",
-    "password_hash": "41c4d5ea2f70bbf6296e92fcb8f9f7c4ed5f91c4ae9d8b6a9e4f6c2b8d7a0f13",
-    "account_balance": 250.0,
-    "account_type": "Current"
-  }
-]
-```
-
 ## File and Directory Structure
 
 ```text
@@ -245,11 +214,9 @@ bank-management-system/
 ├── Makefile
 ├── data/
 │   ├── accounts.csv
-│   ├── accounts.json
 │   └── transactions/
 │       └── <user_name>_transactions.csv
 ├── include/
-│   ├── json.hpp
 │   └── user.h
 ├── src/
 │   ├── main.cpp
@@ -279,14 +246,12 @@ Latest verified run: 28 test cases and 119 assertions.
   - Account-type switch reset behavior for rolling volume
 - Integration tests:
   - Storage initialization creates data directory and files
-  - CSV startup loading with JSON synchronization
-  - JSON fallback when CSV is missing
-  - CSV precedence when both CSV and JSON exist
+  - CSV startup loading and parsing
   - CSV parsing with quoted fields
   - Per-user Savings transactions file format and serial numbering
   - Current-account transaction file absence
 - Regression tests:
-  - Persisted updates remain consistent after reload from CSV and JSON
+  - Persisted updates remain consistent after reload from CSV
   - Password hash persistence and verification across reload
   - Legacy CSV compatibility and stress scenarios
   - Reloaded rolling-volume correctness from persisted transaction history
@@ -304,13 +269,6 @@ make test
 - Insufficient balance checks for withdrawal
 - File I/O diagnostics through stderr and perror for open/write/read failures
 - Graceful handling of malformed CSV rows with warnings
-- JSON parse failures are reported with error details
-
-## Acknowledgment
-
-This project uses the nlohmann/json library for JSON parsing and serialization.
-
-Lohmann, N. (2025). JSON for Modern C++ (Version 3.12.0) [Computer software]. https://github.com/nlohmann/json
 
 ## Contribution Guidelines
 

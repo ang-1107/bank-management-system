@@ -24,7 +24,6 @@ namespace {
 const char* kDataDir = "data";
 const char* kTransactionsDir = "data/transactions";
 const char* kCsvPath = "data/accounts.csv";
-const char* kJsonPath = "data/accounts.json";
 const char* kPasswordHeader = "PasswordHash";
 const char* kTypeChangeEpochHeader = "LastTypeChangeEpochSeconds";
 const char* kTransactionHeader = "SerialNumber,EpochSeconds,Amount";
@@ -668,112 +667,6 @@ void User::modifyAccount() {
     }
 }
 
-// Converts User object to JSON format
-json User::toJson() const {
-    json txnArray = json::array();
-    for (const auto& record : recent_transactions) {
-        txnArray.push_back({
-            {"epoch_seconds", record.epoch_seconds},
-            {"amount", record.amount}
-        });
-    }
-
-    return json{
-        {"account_number", account_number},
-        {"user_name", user_name},
-        {"password_hash", password_hash},
-        {"account_balance", account_balance},
-        {"account_type", accountTypeMap.at(account_type)},
-        {"last_account_type_change_epoch_seconds", last_account_type_change_epoch_seconds},
-        {"recent_transactions", txnArray}
-    };
-}
-
-// Saves all accounts to a JSON file
-bool User::saveToJson(const vector<User>& users) {
-    if (!ensureDataDirectory()) {
-        return false;
-    }
-
-    json jArray = json::array();
-    for (const auto& user : users) {
-        jArray.push_back(user.toJson());
-    }
-
-    ofstream outFile(kJsonPath, ios::trunc);
-    if (!outFile.is_open()) {
-        perror("Error opening data/accounts.json");
-        cerr << "Error: Could not open JSON file for writing!" << endl;
-        return false;
-    }
-
-    outFile << jArray.dump(4);
-    if (!outFile.good()) {
-        perror("Error writing data/accounts.json");
-        cerr << "Error: Failed while writing JSON file." << endl;
-        return false;
-    }
-
-    return true;
-}
-
-// Loads all accounts from a JSON file
-vector<User> User::loadFromJson() {
-    vector<User> loadedUsers;
-
-    if (!ensureDataDirectory()) {
-        return loadedUsers;
-    }
-
-    ifstream inFile(kJsonPath);
-    if (!inFile.is_open()) {
-        return loadedUsers;
-    }
-
-    try {
-        json jArray;
-        inFile >> jArray;
-
-        for (const auto& jUser : jArray) {
-            User user;
-            user.account_number = jUser.value("account_number", "");
-            user.user_name = jUser.value("user_name", "");
-            user.password_hash = jUser.value("password_hash", "");
-            user.account_balance = jUser.value("account_balance", 0.0);
-
-            Type parsed = SAVINGS;
-            if (!parseTypeFromString(jUser.value("account_type", "Savings"), parsed)) {
-                parsed = SAVINGS;
-            }
-            user.account_type = parsed;
-            user.last_account_type_change_epoch_seconds =
-                jUser.value("last_account_type_change_epoch_seconds", static_cast<int64_t>(-1));
-
-            if (user.account_type != SAVINGS) {
-                user.recent_transactions.clear();
-            }
-
-            json txnArray = jUser.value("recent_transactions", json::array());
-            if (user.account_type == SAVINGS && txnArray.is_array()) {
-                for (const auto& txn : txnArray) {
-                    user.recent_transactions.push_back(TransactionRecord{
-                        txn.value("epoch_seconds", static_cast<int64_t>(0)),
-                        txn.value("amount", 0.0)
-                    });
-                }
-            }
-
-            loadedUsers.push_back(user);
-        }
-    } catch (const exception& ex) {
-        cerr << "Error: Failed to parse JSON file data/accounts.json: " << ex.what() << endl;
-        return {};
-    }
-
-    syncCounterFromUsers(loadedUsers);
-    return loadedUsers;
-}
-
 bool User::saveToCsv(const vector<User>& users) {
     if (!ensureDataDirectory()) {
         return false;
@@ -817,18 +710,6 @@ vector<User> User::loadFromCsv() {
     ifstream inFile(kCsvPath);
     if (!inFile.is_open()) {
         if (errno == ENOENT) {
-            std::error_code ec;
-            if (std::filesystem::exists(kJsonPath, ec)) {
-                loadedUsers = loadFromJson();
-                if (!saveToCsv(loadedUsers)) {
-                    cerr << "Error: Failed to initialize CSV from JSON fallback data." << endl;
-                }
-                if (!saveTransactionsForUsers(loadedUsers)) {
-                    cerr << "Error: Failed to initialize transaction files from JSON fallback data." << endl;
-                }
-                return loadedUsers;
-            }
-
             if (!persist(loadedUsers)) {
                 cerr << "Error: Failed to initialize storage files in data/." << endl;
             }
@@ -909,25 +790,19 @@ vector<User> User::loadFromCsv() {
     }
 
     syncCounterFromUsers(loadedUsers);
-
-    if (!saveToJson(loadedUsers)) {
-        cerr << "Warning: Failed to synchronize JSON after reading CSV." << endl;
-    }
-
     return loadedUsers;
 }
 
 bool User::persist(const vector<User>& users) {
     bool csvOk = saveToCsv(users);
-    bool jsonOk = saveToJson(users);
     bool transactionsOk = saveTransactionsForUsers(users);
-    return csvOk && jsonOk && transactionsOk;
+    return csvOk && transactionsOk;
 }
 
 bool User::exportToCSV(const vector<User>& users) {
     bool ok = persist(users);
     if (ok) {
-        cout << "Accounts exported successfully to CSV and synchronized to JSON." << endl;
+        cout << "Accounts exported successfully to CSV." << endl;
     }
     return ok;
 }
