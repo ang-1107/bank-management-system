@@ -145,6 +145,22 @@ For Current accounts, 24-hour volume is not enforced, not tracked, and not shown
 
 ## Code Explanation
 
+### Account Behavior Pattern (Inheritance & Polymorphism)
+
+The application uses a behavior-based design to separate account-type-specific logic from the core `User` class. This follows the Strategy and Polymorphism patterns.
+
+**AccountBehavior Hierarchy:**
+- `AccountBehavior`: abstract base class defining the interface for account-specific rules.
+  - `SavingsBehavior`: enforces rolling 24-hour transaction volume limits and maintains transaction history.
+  - `CurrentBehavior`: no volume enforcement; transactions are processed without restriction.
+
+Each `User` instance holds a `unique_ptr<AccountBehavior>` that is selected at construction time based on account type. When a user performs a deposit or withdrawal, the operation is delegated to the behavior object, which encapsulates type-specific rules. If the account type changes, the behavior is swapped to match the new type.
+
+**Benefits:**
+- Single Responsibility: account-type rules are isolated in behavior classes.
+- Open/Closed Principle: adding a new account type requires only a new behavior class, not modifying `User`.
+- Liskov Substitution: `SavingsBehavior` and `CurrentBehavior` are interchangeable implementations of the same contract.
+
 ### `User` Class
 
 Core data members:
@@ -174,6 +190,17 @@ Persistence and synchronization helpers:
 - `saveToCsv(const std::vector<User>&)`: writes canonical CSV data.
 - `persist(const std::vector<User>&)`: writes CSV and per-user transaction files.
 - `exportToCSV(const std::vector<User>&)`: CSV export entry point.
+
+### Utility Module (`util`)
+
+Provides reusable, domain-independent helper functions to reduce coupling and improve testability:
+
+- **`sha256(const std::string&)`**: Computes SHA-256 hash for password storage and verification.
+- **`splitCsvLine(const std::string&)`**: Parses CSV lines, correctly handling quoted fields with embedded commas and quotes.
+- **`escapeCsvField(const std::string&)`**: Escapes CSV field values (wraps in quotes if needed, escapes internal quotes).
+- **`formatCooldownTime(int64_t)`**: Converts epoch timestamps to human-readable duration format (e.g., "23h 45m 30s").
+
+These utilities are independent of domain logic and can be extended, replaced, or reused in other modules without coupling to the `User` or account behavior logic.
 
 ### Main Program Flow
 
@@ -219,9 +246,11 @@ bank-management-system/
 │   └── transactions/
 │       └── <user_name>_transactions.csv
 ├── include/
+│   ├── account_behavior.h
 │   ├── util.h
 │   └── user.h
 ├── src/
+│   ├── account_behavior.cpp
 │   ├── main.cpp
 │   ├── util.cpp
 │   └── user.cpp

@@ -6,7 +6,8 @@ CXXFLAGS := -std=c++17 -Wall -Wextra -I./include
 MAIN_SRC := src/main.cpp
 USER_SRC := src/user.cpp
 UTIL_SRC := src/util.cpp
-OBJS := main.o user.o util.o
+BEHAVIOR_SRC := src/account_behavior.cpp
+OBJS := main.o user.o util.o account_behavior.o
 
 TARGET := bank.exe
 TEST := test.exe
@@ -22,11 +23,14 @@ user.o: $(USER_SRC) include/user.h
 util.o: $(UTIL_SRC) include/util.h
 	$(CXX) $(CXXFLAGS) -c $(UTIL_SRC) -o $@
 
+account_behavior.o: $(BEHAVIOR_SRC) include/account_behavior.h include/user.h
+	$(CXX) $(CXXFLAGS) -c $(BEHAVIOR_SRC) -o $@
+
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET)
 
-test: tests/user_test.cpp $(USER_SRC) $(UTIL_SRC) include/user.h include/util.h
-	$(CXX) $(CXXFLAGS) tests/user_test.cpp $(USER_SRC) $(UTIL_SRC) -o $(TEST)
+test: tests/user_test_main.cpp tests/user_basic_test.cpp tests/user_persistence_test.cpp tests/user_auth_test.cpp tests/user_modify_test.cpp tests/user_volume_test.cpp tests/user_copy_move_test.cpp $(USER_SRC) $(UTIL_SRC) $(BEHAVIOR_SRC) tests/test_helpers.h include/user.h include/util.h include/account_behavior.h
+	$(CXX) $(CXXFLAGS) tests/user_test_main.cpp tests/user_basic_test.cpp tests/user_persistence_test.cpp tests/user_auth_test.cpp tests/user_modify_test.cpp tests/user_volume_test.cpp tests/user_copy_move_test.cpp $(USER_SRC) $(UTIL_SRC) $(BEHAVIOR_SRC) -o $(TEST)
 	./$(TEST)
 
 run: $(TARGET)

@@ -1,5 +1,6 @@
 #include "user.h"
 #include "util.h"
+#include "account_behavior.h"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -271,6 +272,15 @@ bool User::parseTypeFromString(const string& typeText, Type& parsedType) {
     return false;
 }
 
+// Helper to initialize behavior based on account type
+static AccountBehavior* createBehaviorForType(Type type, std::vector<TransactionRecord>* txns) {
+    if (type == SAVINGS) {
+        return new SavingsBehavior(txns);
+    } else {
+        return new CurrentBehavior();
+    }
+}
+
 // Constructor: Generates a unique account number
 User::User() {
     counter += 1;
@@ -280,11 +290,70 @@ User::User() {
     account_balance = 0.0;
     account_type = SAVINGS;
     last_account_type_change_epoch_seconds = -1;
+    behavior = unique_ptr<AccountBehavior>(createBehaviorForType(SAVINGS, &recent_transactions));
 }
 
 // Destructor
 User::~User() {
     // Empty Deconstructor
+}
+
+// Copy constructor (deep copy with behavior cloning)
+User::User(const User& other)
+    : account_number(other.account_number),
+      user_name(other.user_name),
+      password_hash(other.password_hash),
+      account_balance(other.account_balance),
+      account_type(other.account_type),
+      last_account_type_change_epoch_seconds(other.last_account_type_change_epoch_seconds),
+      recent_transactions(other.recent_transactions),
+            behavior(nullptr) {
+        behavior = unique_ptr<AccountBehavior>(createBehaviorForType(account_type, &recent_transactions));
+}
+
+// Copy assignment operator (deep copy with behavior cloning)
+User& User::operator=(const User& other) {
+    if (this != &other) {
+        account_number = other.account_number;
+        user_name = other.user_name;
+        password_hash = other.password_hash;
+        account_balance = other.account_balance;
+        account_type = other.account_type;
+        last_account_type_change_epoch_seconds = other.last_account_type_change_epoch_seconds;
+        recent_transactions = other.recent_transactions;
+        behavior = unique_ptr<AccountBehavior>(createBehaviorForType(account_type, &recent_transactions));
+    }
+    return *this;
+}
+
+// Move constructor
+User::User(User&& other) noexcept
+    : account_number(std::move(other.account_number)),
+      user_name(std::move(other.user_name)),
+      password_hash(std::move(other.password_hash)),
+      account_balance(other.account_balance),
+      account_type(other.account_type),
+      last_account_type_change_epoch_seconds(other.last_account_type_change_epoch_seconds),
+      recent_transactions(std::move(other.recent_transactions)),
+      behavior(nullptr) {
+    // Recreate behavior pointing to this User's recent_transactions vector.
+    behavior = unique_ptr<AccountBehavior>(createBehaviorForType(account_type, &recent_transactions));
+}
+
+// Move assignment operator
+User& User::operator=(User&& other) noexcept {
+    if (this != &other) {
+        account_number = std::move(other.account_number);
+        user_name = std::move(other.user_name);
+        password_hash = std::move(other.password_hash);
+        account_balance = other.account_balance;
+        account_type = other.account_type;
+        last_account_type_change_epoch_seconds = other.last_account_type_change_epoch_seconds;
+        recent_transactions = std::move(other.recent_transactions);
+        // Recreate behavior pointing to this User's recent_transactions vector.
+        behavior = unique_ptr<AccountBehavior>(createBehaviorForType(account_type, &recent_transactions));
+    }
+    return *this;
 }
 
 // Creates a new account with user input
@@ -349,25 +418,17 @@ void User::deposit(double amount) {
         return;
     }
 
-    if (account_type == CURRENT) {
-        account_balance += amount;
-        cout << "Credited $" << fixed << setprecision(2) << amount << " successfully." << endl;
-        cout << "Updated Balance: $" << fixed << setprecision(2) << account_balance << endl;
-        return;
-    }
-
     const int64_t nowEpochSeconds = getCurrentEpochSeconds();
-    pruneExpiredTransactions(nowEpochSeconds);
-
-    if (!canApplyTransaction(amount, nowEpochSeconds)) {
-        const double remaining = max(0.0, kDailyTransactionLimit - rolling24hVolume(nowEpochSeconds));
+    
+    if (!behavior->canApplyDeposit(amount, nowEpochSeconds)) {
+        const double remaining = behavior->getRemainingVolume(nowEpochSeconds);
         cout << "Transaction denied: 24-hour volume limit exceeded." << endl;
         cout << "Remaining 24-hour volume: $" << fixed << setprecision(2) << remaining << endl;
         return;
     }
 
     account_balance += amount;
-    recordTransaction(amount, nowEpochSeconds);
+    behavior->recordTransaction(amount, nowEpochSeconds);
     cout << "Credited $" << fixed << setprecision(2) << amount << " successfully." << endl;
     cout << "Updated Balance: $" << fixed << setprecision(2) << account_balance << endl;
 }
@@ -384,25 +445,17 @@ bool User::withdraw(double amount) {
         return false;
     }
 
-    if (account_type == CURRENT) {
-        account_balance -= amount;
-        cout << "Debited $" << fixed << setprecision(2) << amount << " successfully." << endl;
-        cout << "Updated Balance: $" << fixed << setprecision(2) << account_balance << endl;
-        return true;
-    }
-
     const int64_t nowEpochSeconds = getCurrentEpochSeconds();
-    pruneExpiredTransactions(nowEpochSeconds);
 
-    if (!canApplyTransaction(-amount, nowEpochSeconds)) {
-        const double remaining = max(0.0, kDailyTransactionLimit - rolling24hVolume(nowEpochSeconds));
+    if (!behavior->canApplyWithdraw(amount, nowEpochSeconds)) {
+        const double remaining = behavior->getRemainingVolume(nowEpochSeconds);
         cout << "Transaction denied: 24-hour volume limit exceeded." << endl;
         cout << "Remaining 24-hour volume: $" << fixed << setprecision(2) << remaining << endl;
         return false;
     }
 
     account_balance -= amount;
-    recordTransaction(-amount, nowEpochSeconds);
+    behavior->recordTransaction(-amount, nowEpochSeconds);
     cout << "Debited $" << fixed << setprecision(2) << amount << " successfully." << endl;
     cout << "Updated Balance: $" << fixed << setprecision(2) << account_balance << endl;
     return true;
@@ -485,8 +538,8 @@ void User::modifyAccount() {
             } else {
                 account_type = requestedType;
                 last_account_type_change_epoch_seconds = nowEpochSeconds;
-                // Intentional behavior: account-type transitions reset the sliding-volume state.
-                recent_transactions.clear();
+                behavior->onAccountTypeChanged();
+                behavior = unique_ptr<AccountBehavior>(createBehaviorForType(requestedType, &recent_transactions));
                 cout << "Account type updated successfully. Next change allowed after 24 hours." << endl;
             }
         }
@@ -611,6 +664,9 @@ vector<User> User::loadFromCsv() {
         } else {
             user.recent_transactions.clear();
         }
+        
+        // Initialize behavior after loading the account type and transactions
+        user.behavior = unique_ptr<AccountBehavior>(createBehaviorForType(user.account_type, &user.recent_transactions));
 
         loadedUsers.push_back(user);
     }
@@ -650,17 +706,11 @@ Type User::getAccountType() const {
 }
 
 double User::getCurrent24hVolume() const {
-    if (account_type != SAVINGS) {
-        return 0.0;
-    }
-    return rolling24hVolume(getCurrentEpochSeconds());
+    return behavior->getCurrentVolume(getCurrentEpochSeconds());
 }
 
 double User::getRemaining24hVolume() const {
-    if (account_type != SAVINGS) {
-        return 0.0;
-    }
-    return max(0.0, kDailyTransactionLimit - getCurrent24hVolume());
+    return behavior->getRemainingVolume(getCurrentEpochSeconds());
 }
 
 void User::setTimeOverrideForTesting(int64_t epochSeconds) {
@@ -701,9 +751,10 @@ void User::setUserName(const std::string& name) {
 
 void User::setAccountType(Type type) {
     if (this->account_type != type) {
-        recent_transactions.clear();
+        this->account_type = type;
+        behavior->onAccountTypeChanged();
+        behavior = unique_ptr<AccountBehavior>(createBehaviorForType(type, &recent_transactions));
     }
-    this->account_type = type;
     return;
 }
 

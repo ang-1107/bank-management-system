@@ -9,6 +9,10 @@
 #include <vector>       // For storing multiple user objects
 #include <cstddef>      // For size_t
 #include <cstdint>      // For fixed width integer types
+#include <memory>       // For unique_ptr
+
+// Forward declaration
+class AccountBehavior;
 
 // Enum for account types
 typedef enum Type_ { SAVINGS = 0, CURRENT = 1 } Type;
@@ -28,6 +32,7 @@ private:
     Type account_type;
     int64_t last_account_type_change_epoch_seconds;
     std::vector<TransactionRecord> recent_transactions;
+    std::unique_ptr<AccountBehavior> behavior;
 
     static int counter;
     static int64_t time_override_epoch_seconds;
@@ -49,6 +54,10 @@ private:
 public:
     User();                     // Constructor
     ~User();                    // Destructor
+    User(const User& other);       // Copy constructor (clones behavior)
+    User& operator=(const User& other);  // Copy assignment (clones behavior)
+    User(User&& other) noexcept;  // Move constructor
+    User& operator=(User&& other) noexcept;  // Move assignment operator
 
     void createAccount();        // Creates a new account
     void displayAccount() const; // Displays account details
