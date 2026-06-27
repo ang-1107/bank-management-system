@@ -9,7 +9,7 @@ TEST_CASE("Persist creates data directory and CSV file", "[integration][io]") {
     REQUIRE_FALSE(fs::exists("data"));
 
     std::vector<User> users;
-    REQUIRE(User::persist(users));
+    REQUIRE(UserDAO().persistAll(users));
 
     REQUIRE(fs::exists("data"));
     REQUIRE(fs::exists("data/accounts.csv"));
@@ -28,7 +28,7 @@ TEST_CASE("CSV is startup source of truth", "[integration][startup]") {
     csv << "000020260418102,Bob,30.00,Current\n";
     csv.close();
 
-    std::vector<User> loaded = User::loadFromCsv();
+    std::vector<User> loaded = UserDAO().loadAll();
     REQUIRE(loaded.size() == 2);
 
     auto byNumber = [&](const std::string& accNo) {
@@ -54,12 +54,12 @@ TEST_CASE("Regression: persisted updates are reloaded consistently", "[regressio
 
     std::vector<User> users;
     users.push_back(createTestUser("Regression User", SAVINGS, 100.0));
-    REQUIRE(User::persist(users));
+    REQUIRE(UserDAO().persistAll(users));
 
     users[0].deposit(25.0);
-    REQUIRE(User::persist(users));
+    REQUIRE(UserDAO().persistAll(users));
 
-    std::vector<User> loaded = User::loadFromCsv();
+    std::vector<User> loaded = UserDAO().loadAll();
     REQUIRE(loaded.size() == 1);
     REQUIRE(loaded[0].getUserName() == "Regression User");
     REQUIRE(loaded[0].getBalance() == Approx(125.0));
@@ -72,9 +72,9 @@ TEST_CASE("CSV parsing supports quoted commas in names", "[integration][csv]") {
 
     std::vector<User> users;
     users.push_back(createTestUser("Last, First", CURRENT, 77.7));
-    REQUIRE(User::persist(users));
+    REQUIRE(UserDAO().persistAll(users));
 
-    std::vector<User> loaded = User::loadFromCsv();
+    std::vector<User> loaded = UserDAO().loadAll();
     REQUIRE(loaded.size() == 1);
     REQUIRE(loaded[0].getUserName() == "Last, First");
     REQUIRE(loaded[0].getBalance() == Approx(77.70));
@@ -93,7 +93,7 @@ TEST_CASE("Legacy 4-column CSV rows remain readable", "[regression][csv]") {
     csv << "000020260418777,Legacy User,88.80,Current\n";
     csv.close();
 
-    std::vector<User> loaded = User::loadFromCsv();
+    std::vector<User> loaded = UserDAO().loadAll();
     REQUIRE(loaded.size() == 1);
     REQUIRE(loaded[0].getUserName() == "Legacy User");
     REQUIRE(loaded[0].getBalance() == Approx(88.80));
@@ -115,9 +115,9 @@ TEST_CASE("Stress: persist and reload many users", "[stress][persistence]") {
         users.push_back(u);
     }
 
-    REQUIRE(User::persist(users));
+    REQUIRE(UserDAO().persistAll(users));
 
-    std::vector<User> loaded = User::loadFromCsv();
+    std::vector<User> loaded = UserDAO().loadAll();
     REQUIRE(static_cast<int>(loaded.size()) == totalUsers);
     REQUIRE(loaded.front().verifyPassword("P@ss0!X"));
     REQUIRE(loaded.back().verifyPassword("P@ss399!X"));

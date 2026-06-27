@@ -1,4 +1,5 @@
 #include "user.h"
+#include "user_dao.h"
 #include <algorithm>
 #include <csignal>
 #include <cstdlib>
@@ -30,7 +31,7 @@ bool readMenuChoice(int& choice, int minChoice, int maxChoice) {
     return true;
 }
 
-bool runAuthenticatedSession(vector<User>& users, size_t currentIndex) {
+bool runAuthenticatedSession(vector<User>& users, size_t currentIndex, const UserDAO& userDao) {
     int choice;
     bool loggedIn = true;
 
@@ -58,11 +59,17 @@ bool runAuthenticatedSession(vector<User>& users, size_t currentIndex) {
                 }
                 break;
             case 2:
+            {
+                const string oldUserName = users[currentIndex].getUserName();
                 users[currentIndex].modifyAccount();
-                if (!User::persist(users)) {
+                if (!userDao.migrateTransactionFileForUserNameChange(oldUserName, users[currentIndex].getUserName())) {
+                    cerr << "Warning: Failed to migrate transaction history file for updated username." << endl;
+                }
+                if (!userDao.persistAll(users)) {
                     cerr << "Error: Failed to persist modified account to disk." << endl;
                 }
                 break;
+            }
             case 3: {
                 double amount;
                 cout << "Enter Amount to Deposit: ";
@@ -74,7 +81,7 @@ bool runAuthenticatedSession(vector<User>& users, size_t currentIndex) {
                 }
 
                 users[currentIndex].deposit(amount);
-                if (!User::persist(users)) {
+                if (!userDao.persistAll(users)) {
                     cerr << "Error: Failed to persist deposit transaction to disk." << endl;
                 }
                 break;
@@ -90,7 +97,7 @@ bool runAuthenticatedSession(vector<User>& users, size_t currentIndex) {
                 }
 
                 if (users[currentIndex].withdraw(amount)) {
-                    if (!User::persist(users)) {
+                    if (!userDao.persistAll(users)) {
                         cerr << "Error: Failed to persist withdrawal transaction to disk." << endl;
                     }
                 }
@@ -115,7 +122,8 @@ int main() {
     signal(SIGTERM, handleTerminationSignal);
 #endif
 
-    vector<User> users = User::loadFromCsv();  // CSV is the source of truth at startup
+    UserDAO userDao;
+    vector<User> users = userDao.loadAll();
 
     int choice;
     bool isRunning = true;
@@ -136,11 +144,11 @@ int main() {
                 User newUser;
                 newUser.createAccount();
                 users.push_back(newUser);
-                if (!User::persist(users)) {
+                if (!userDao.persistAll(users)) {
                     cerr << "Error: Failed to persist account creation to disk." << endl;
                 }
 
-                runAuthenticatedSession(users, users.size() - 1);
+                runAuthenticatedSession(users, users.size() - 1, userDao);
                 break;
             }
             case 2: {
@@ -168,7 +176,7 @@ int main() {
 
                 cout << "Login successful." << endl;
                 size_t currentIndex = static_cast<size_t>(distance(users.begin(), it));
-                runAuthenticatedSession(users, currentIndex);
+                runAuthenticatedSession(users, currentIndex, userDao);
                 break;
             }
             case 3:

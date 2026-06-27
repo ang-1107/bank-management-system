@@ -23,6 +23,16 @@ struct TransactionRecord {
     double amount;
 };
 
+struct UserRecord {
+    std::string account_number;
+    std::string user_name;
+    std::string password_hash;
+    double account_balance = 0.0;
+    Type account_type = SAVINGS;
+    int64_t last_account_type_change_epoch_seconds = -1;
+    std::vector<TransactionRecord> recent_transactions;
+};
+
 class User {
 private:
     std::string account_number;
@@ -38,18 +48,6 @@ private:
     static int64_t time_override_epoch_seconds;
     static std::string getCurrentDate();    // Static function to get formatted date
     static int64_t getCurrentEpochSeconds();
-    static bool ensureDataDirectory();
-    static void syncCounterFromUsers(const std::vector<User>& loadedUsers);
-    static bool parseTypeFromString(const std::string& typeText, Type& parsedType);
-    static std::string sanitizeUserNameForFile(const std::string& userName);
-    std::string transactionFilePath() const;
-    static bool loadTransactionsForUser(User& user);
-    static bool saveTransactionsForUser(const User& user);
-    static bool saveTransactionsForUsers(const std::vector<User>& users);
-    void pruneExpiredTransactions(int64_t nowEpochSeconds);
-    double rolling24hVolume(int64_t nowEpochSeconds) const;
-    bool canApplyTransaction(double signedAmount, int64_t nowEpochSeconds) const;
-    void recordTransaction(double signedAmount, int64_t nowEpochSeconds);
 
 public:
     User();                     // Constructor
@@ -77,16 +75,9 @@ public:
     double getRemaining24hVolume() const;
     static void setTimeOverrideForTesting(int64_t epochSeconds);
     static void clearTimeOverrideForTesting();
-
-    // CSV Storage
-    static bool saveToCsv(const std::vector<User>& users);
-    static std::vector<User> loadFromCsv();
-
-    // Persist canonical CSV data and per-user transaction files
-    static bool persist(const std::vector<User>& users);
-
-    // CSV export alias
-    static bool exportToCSV(const std::vector<User>& users);
+    static User fromRecord(const UserRecord& record);
+    UserRecord toRecord() const;
+    static void syncAccountCounterFromRecords(const std::vector<UserRecord>& records);
 
     // Get-Set Methods for Testing
     void setUserName(const std::string& name);

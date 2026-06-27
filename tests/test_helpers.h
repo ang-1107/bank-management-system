@@ -1,6 +1,7 @@
 #pragma once
 #include "catch.hpp"
 #include "../include/user.h"
+#include "../include/user_dao.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>

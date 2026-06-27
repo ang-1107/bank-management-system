@@ -51,7 +51,7 @@ TEST_CASE("Per-user transaction file stores serial and epoch", "[integration][tr
     User::clearTimeOverrideForTesting();
 
     std::vector<User> users{u};
-    REQUIRE(User::persist(users));
+    REQUIRE(UserDAO().persistAll(users));
 
     fs::path txFile = fs::path("data") / "transactions" / "Tx_User_transactions.csv";
     REQUIRE(fs::exists(txFile));
@@ -100,7 +100,7 @@ TEST_CASE("Current account does not maintain transaction file", "[integration][c
     User u = createTestUser("No Tx Current", CURRENT, 1000.0);
     u.setPassword("no-tx-pass");
     u.deposit(100.0);
-    REQUIRE(User::persist(std::vector<User>{u}));
+    REQUIRE(UserDAO().persistAll(std::vector<User>{u}));
     User::clearTimeOverrideForTesting();
 
     fs::path txFile = fs::path("data") / "transactions" / "No_Tx_Current_transactions.csv";
@@ -135,9 +135,9 @@ TEST_CASE("Reloaded transaction history retains rolling volume", "[regression][t
     u.withdraw(5000.0);
 
     std::vector<User> users{u};
-    REQUIRE(User::persist(users));
+    REQUIRE(UserDAO().persistAll(users));
 
-    std::vector<User> loaded = User::loadFromCsv();
+    std::vector<User> loaded = UserDAO().loadAll();
     REQUIRE(loaded.size() == 1);
     REQUIRE(loaded[0].getCurrent24hVolume() == Approx(25000.0));
     REQUIRE(loaded[0].getRemaining24hVolume() == Approx(75000.0));

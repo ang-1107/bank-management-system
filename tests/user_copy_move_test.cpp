@@ -171,9 +171,9 @@ TEST_CASE("Copy of user with multiple transactions preserves full history", "[co
 
     // Persist both and verify they maintain independent state
     std::vector<User> users{u, copy};
-    REQUIRE(User::persist(users));
+    REQUIRE(UserDAO().persistAll(users));
 
-    std::vector<User> loaded = User::loadFromCsv();
+    std::vector<User> loaded = UserDAO().loadAll();
     REQUIRE(loaded.size() == 2);
     REQUIRE(loaded[0].getCurrent24hVolume() == Approx(60000.0));
     REQUIRE(loaded[1].getCurrent24hVolume() == Approx(60000.0));

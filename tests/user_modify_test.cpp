@@ -86,9 +86,9 @@ TEST_CASE("Type-change cooldown survives persist and reload", "[modify][cooldown
     }
     REQUIRE(u.getAccountType() == CURRENT);
 
-    REQUIRE(User::persist(std::vector<User>{u}));
+    REQUIRE(UserDAO().persistAll(std::vector<User>{u}));
 
-    std::vector<User> loaded = User::loadFromCsv();
+    std::vector<User> loaded = UserDAO().loadAll();
     REQUIRE(loaded.size() == 1);
     REQUIRE(loaded[0].getAccountType() == CURRENT);
 

@@ -126,17 +126,16 @@ For Current accounts, 24-hour volume is not enforced, not tracked, and not shown
 
 - Single source of runtime state:
   - `src/main.cpp` owns one `vector<User>` for consistent state management.
-- Startup source of truth:
-  - Accounts are loaded from `data/accounts.csv` at program start.
-- Disk persistence strategy:
-  - Any mutating operation triggers `persist(users)`.
-  - `persist(users)` writes `data/accounts.csv`.
-  - `persist(users)` also writes per-user transaction files in `data/transactions/`.
+- DAO-backed persistence:
+  - `UserDAO` loads accounts from `data/accounts.csv`.
+  - `UserDAO` persists canonical account records to `data/accounts.csv`.
+  - `UserDAO` persists Savings transaction history files in `data/transactions/`.
+  - `UserRecord` is the data-transfer boundary between CSV storage and the `User` domain model.
 - Directory handling:
   - The `data` directory is created automatically if it does not exist.
 - Sliding-window enforcement:
   - Savings transactions compute rolling 24-hour volume using epoch timestamps.
-  - If `current_volume + abs(new_amount) > 100000`, the Savings transaction is rejected.
+  - If `current_volume + abs(requested_amount) > 100000`, the Savings transaction is rejected.
   - Current transactions bypass this check and do not maintain rolling-volume history.
   - Changing account type resets rolling-volume state.
 - Account type change cooldown:
@@ -154,11 +153,11 @@ The application uses a behavior-based design to separate account-type-specific l
   - `SavingsBehavior`: enforces rolling 24-hour transaction volume limits and maintains transaction history.
   - `CurrentBehavior`: no volume enforcement; transactions are processed without restriction.
 
-Each `User` instance holds a `unique_ptr<AccountBehavior>` that is selected at construction time based on account type. When a user performs a deposit or withdrawal, the operation is delegated to the behavior object, which encapsulates type-specific rules. If the account type changes, the behavior is swapped to match the new type.
+Each `User` instance holds a `unique_ptr<AccountBehavior>` that is selected at construction time based on account type. When a user performs a deposit or withdrawal, the operation is delegated to the behavior object, which encapsulates type-specific rules. If the account type changes, the behavior is swapped to match the selected type.
 
 **Benefits:**
 - Single Responsibility: account-type rules are isolated in behavior classes.
-- Open/Closed Principle: adding a new account type requires only a new behavior class, not modifying `User`.
+- Open/Closed Principle: adding another account type requires a behavior class without modifying `User`.
 - Liskov Substitution: `SavingsBehavior` and `CurrentBehavior` are interchangeable implementations of the same contract.
 
 ### `User` Class
@@ -173,7 +172,7 @@ Core data members:
 
 Main behaviors:
 
-- `createAccount()`: reads name, type, password, and initializes a new account.
+- `createAccount()`: reads name, type, password, and initializes an account.
 - `displayAccount()`: prints account details.
 - `modifyAccount()`: updates name, type, or both based on user choice.
 - `deposit(double amount)`: credits money to account balance.
@@ -183,13 +182,22 @@ Main behaviors:
 - `isPasswordPolicyValid(const std::string&)`: validates printable ASCII password policy.
 - `getCurrent24hVolume()`: returns current rolling 24-hour transaction volume for Savings accounts.
 - `getRemaining24hVolume()`: returns remaining allowable volume in the window for Savings accounts.
+- `fromRecord(const UserRecord&)`: hydrates a domain object from DAO data.
+- `toRecord()`: exports domain state for DAO persistence.
 
-Persistence and synchronization helpers:
+### User DAO
 
-- `loadFromCsv()`: startup read path and source of truth.
-- `saveToCsv(const std::vector<User>&)`: writes canonical CSV data.
-- `persist(const std::vector<User>&)`: writes CSV and per-user transaction files.
-- `exportToCSV(const std::vector<User>&)`: CSV export entry point.
+`UserDAO` owns persistence concerns and keeps file handling outside the domain model.
+
+Main responsibilities:
+
+- `loadAll()`: loads account records and returns hydrated `User` objects.
+- `persistAll(const std::vector<User>&)`: writes account records and Savings transaction files.
+- `migrateTransactionFileForUserNameChange(...)`: preserves username-based transaction file continuity when a user changes name.
+- CSV parsing and serialization
+- Transaction file path generation
+- Storage directory creation
+- Legacy CSV row compatibility
 
 ### Utility Module (`util`)
 
@@ -204,10 +212,10 @@ These utilities are independent of domain logic and can be extended, replaced, o
 
 ### Main Program Flow
 
-- `main()` in `src/main.cpp` loads user state from CSV at startup.
+- `main()` in `src/main.cpp` loads user state through `UserDAO`.
 - Top-level menu exposes `Create Account`, `Login`, and `Exit`.
 - Successful authentication enters account session menu (`View`, `Modify`, `Deposit`, `Withdraw`, `Logout`).
-- Any mutation (`create`, `modify`, `deposit`, `withdraw`) calls `persist(users)`.
+- Any mutation (`create`, `modify`, `deposit`, `withdraw`) calls `UserDAO::persistAll(users)`.
 - `SIGINT` and `SIGTERM` print the same exit message as regular `Exit`.
 
 ## Data Storage Formats
@@ -247,16 +255,25 @@ bank-management-system/
 │       └── <user_name>_transactions.csv
 ├── include/
 │   ├── account_behavior.h
-│   ├── util.h
-│   └── user.h
+│   ├── user.h
+│   ├── user_dao.h
+│   └── util.h
 ├── src/
 │   ├── account_behavior.cpp
 │   ├── main.cpp
-│   ├── util.cpp
-│   └── user.cpp
+│   ├── user.cpp
+│   ├── user_dao.cpp
+│   └── util.cpp
 ├── tests/
 │   ├── catch.hpp
-│   └── user_test.cpp
+│   ├── test_helpers.h
+│   ├── user_auth_test.cpp
+│   ├── user_basic_test.cpp
+│   ├── user_copy_move_test.cpp
+│   ├── user_modify_test.cpp
+│   ├── user_persistence_test.cpp
+│   ├── user_test_main.cpp
+│   └── user_volume_test.cpp
 └── LICENSE
 ```
 
@@ -264,7 +281,7 @@ bank-management-system/
 
 The project includes unit, integration, and regression tests using Catch2.
 
-Latest verified run: 26 test cases and 104 assertions.
+Verified run: 35 test cases and 152 assertions.
 
 ### Coverage Highlights
 
@@ -284,7 +301,7 @@ Latest verified run: 26 test cases and 104 assertions.
   - Per-user Savings transactions file format and serial numbering
   - Current-account transaction file absence
 - Regression tests:
-  - Persisted updates remain consistent after reload from CSV
+  - Persisted updates remain consistent across CSV reload
   - Password hash persistence and verification across reload
   - Legacy CSV compatibility and stress scenarios
   - Reloaded rolling-volume correctness from persisted transaction history

@@ -3,12 +3,9 @@
 #include "account_behavior.h"
 #include <algorithm>
 #include <array>
-#include <cerrno>
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
 #include <cmath>
-#include <filesystem>
 #include <limits>
 #include <sstream>
 
@@ -23,16 +20,7 @@ int User::counter = 0;                              // Initializing the static c
 int64_t User::time_override_epoch_seconds = -1;
 
 namespace {
-const char* kDataDir = "data";
-const char* kTransactionsDir = "data/transactions";
-const char* kCsvPath = "data/accounts.csv";
-const char* kPasswordHeader = "PasswordHash";
-const char* kTypeChangeEpochHeader = "LastTypeChangeEpochSeconds";
-const char* kTransactionHeader = "SerialNumber,EpochSeconds,Amount";
-const char* kTransactionsSuffix = "_transactions.csv";
-constexpr int64_t kRollingWindowSeconds = 24LL * 60LL * 60LL;
 constexpr int64_t kTypeChangeCooldownSeconds = 24LL * 60LL * 60LL;
-constexpr double kDailyTransactionLimit = 100000.0;
 
 bool isAllowedPasswordChar(unsigned char ch) {
     // Allow only printable ASCII characters excluding spaces and control characters.
@@ -42,9 +30,9 @@ bool isAllowedPasswordChar(unsigned char ch) {
 
 // Generates current date in YYYYMMDD format
 string User::getCurrentDate() {
-    time_t now = time(0);
+    time_t currentTime = time(0);
     char dateStr[9];
-    strftime(dateStr, sizeof(dateStr), "%Y%m%d", localtime(&now));
+    strftime(dateStr, sizeof(dateStr), "%Y%m%d", localtime(&currentTime));
     return string(dateStr);
 }
 
@@ -53,179 +41,16 @@ int64_t User::getCurrentEpochSeconds() {
         return time_override_epoch_seconds;
     }
 
-    const auto now = chrono::system_clock::now();
-    return chrono::duration_cast<chrono::seconds>(now.time_since_epoch()).count();
+    const auto currentTime = chrono::system_clock::now();
+    return chrono::duration_cast<chrono::seconds>(currentTime.time_since_epoch()).count();
 }
 
-std::string User::sanitizeUserNameForFile(const std::string& userName) {
-    string sanitized;
-    sanitized.reserve(userName.size());
-
-    for (unsigned char ch : userName) {
-        if (isalnum(ch) != 0) {
-            sanitized.push_back(static_cast<char>(ch));
-        } else {
-            sanitized.push_back('_');
-        }
-    }
-
-    if (sanitized.empty()) {
-        return "user";
-    }
-
-    return sanitized;
-}
-
-std::string User::transactionFilePath() const {
-    return string(kTransactionsDir) + "/" + sanitizeUserNameForFile(user_name) + kTransactionsSuffix;
-}
-
-bool User::loadTransactionsForUser(User& user) {
-    user.recent_transactions.clear();
-
-    ifstream inFile(user.transactionFilePath());
-    if (!inFile.is_open()) {
-        return true;
-    }
-
-    string line;
-    size_t lineNumber = 0;
-    while (getline(inFile, line)) {
-        ++lineNumber;
-        if (line.empty()) {
-            continue;
-        }
-
-        if (lineNumber == 1 && line.rfind("SerialNumber", 0) == 0) {
-            continue;
-        }
-
-        vector<string> fields = splitCsvLine(line);
-        if (fields.size() != 3) {
-            cerr << "Warning: Skipping malformed transaction row for user "
-                 << user.user_name << " at line " << lineNumber << "." << endl;
-            continue;
-        }
-
-        try {
-            TransactionRecord record;
-            record.epoch_seconds = stoll(fields[1]);
-            record.amount = stod(fields[2]);
-            user.recent_transactions.push_back(record);
-        } catch (const exception&) {
-            cerr << "Warning: Skipping invalid transaction row for user "
-                 << user.user_name << " at line " << lineNumber << "." << endl;
-        }
-    }
-
-    return true;
-}
-
-bool User::saveTransactionsForUser(const User& user) {
-    if (!ensureDataDirectory()) {
-        return false;
-    }
-
-    std::error_code ec;
-    std::filesystem::create_directories(kTransactionsDir, ec);
-    if (ec) {
-        cerr << "Error: Could not create transactions directory: " << ec.message() << endl;
-        return false;
-    }
-
-    ofstream outFile(user.transactionFilePath(), ios::trunc);
-    if (!outFile.is_open()) {
-        perror("Error opening per-user transactions CSV");
-        cerr << "Error: Could not write transactions for user " << user.user_name << "." << endl;
-        return false;
-    }
-
-    outFile << kTransactionHeader << "\n";
-    for (size_t i = 0; i < user.recent_transactions.size(); ++i) {
-        const auto& record = user.recent_transactions[i];
-        outFile << (i + 1) << "," << record.epoch_seconds << "," << record.amount << "\n";
-    }
-
-    if (!outFile.good()) {
-        perror("Error writing per-user transactions CSV");
-        cerr << "Error: Failed while writing transactions for user " << user.user_name << "." << endl;
-        return false;
-    }
-
-    return true;
-}
-
-bool User::saveTransactionsForUsers(const vector<User>& users) {
-    bool allOk = true;
-    for (const auto& user : users) {
-        if (user.account_type == SAVINGS) {
-            if (!saveTransactionsForUser(user)) {
-                allOk = false;
-            }
-        } else {
-            std::error_code ec;
-            std::filesystem::remove(user.transactionFilePath(), ec);
-        }
-    }
-    return allOk;
-}
-
-void User::pruneExpiredTransactions(int64_t nowEpochSeconds) {
-    const int64_t cutoff = nowEpochSeconds - kRollingWindowSeconds;
-    recent_transactions.erase(
-        remove_if(recent_transactions.begin(), recent_transactions.end(), [&](const TransactionRecord& record) {
-            return record.epoch_seconds < cutoff;
-        }),
-        recent_transactions.end());
-}
-
-double User::rolling24hVolume(int64_t nowEpochSeconds) const {
-    const int64_t cutoff = nowEpochSeconds - kRollingWindowSeconds;
-    double total = 0.0;
-    for (const auto& record : recent_transactions) {
-        if (record.epoch_seconds >= cutoff) {
-            total += fabs(record.amount);
-        }
-    }
-    return total;
-}
-
-bool User::canApplyTransaction(double signedAmount, int64_t nowEpochSeconds) const {
-    if (account_type != SAVINGS) {
-        return true;
-    }
-    const double currentVolume = rolling24hVolume(nowEpochSeconds);
-    return currentVolume + fabs(signedAmount) <= kDailyTransactionLimit;
-}
-
-void User::recordTransaction(double signedAmount, int64_t nowEpochSeconds) {
-    recent_transactions.push_back(TransactionRecord{nowEpochSeconds, signedAmount});
-}
-
-bool User::ensureDataDirectory() {
-    std::error_code ec;
-    if (std::filesystem::exists(kDataDir, ec)) {
-        if (!std::filesystem::is_directory(kDataDir, ec)) {
-            cerr << "Error: '" << kDataDir << "' exists but is not a directory." << endl;
-            return false;
-        }
-        return true;
-    }
-
-    if (!std::filesystem::create_directories(kDataDir, ec)) {
-        cerr << "Error creating data directory '" << kDataDir << "': " << ec.message() << endl;
-        return false;
-    }
-
-    return true;
-}
-
-void User::syncCounterFromUsers(const vector<User>& loadedUsers) {
+void User::syncAccountCounterFromRecords(const vector<UserRecord>& records) {
     const string todayPrefix = "0000" + getCurrentDate();
     int maxCounter = 0;
 
-    for (const auto& user : loadedUsers) {
-        const string& accountNumber = user.account_number;
+    for (const auto& record : records) {
+        const string& accountNumber = record.account_number;
         if (accountNumber.rfind(todayPrefix, 0) != 0) {
             continue;
         }
@@ -251,25 +76,6 @@ void User::syncCounterFromUsers(const vector<User>& loadedUsers) {
     }
 
     counter = maxCounter;
-}
-
-bool User::parseTypeFromString(const string& typeText, Type& parsedType) {
-    string normalized;
-    normalized.reserve(typeText.size());
-    for (char ch : typeText) {
-        normalized.push_back(static_cast<char>(tolower(static_cast<unsigned char>(ch))));
-    }
-
-    if (normalized == "savings") {
-        parsedType = SAVINGS;
-        return true;
-    }
-    if (normalized == "current") {
-        parsedType = CURRENT;
-        return true;
-    }
-
-    return false;
 }
 
 // Helper to initialize behavior based on account type
@@ -377,6 +183,7 @@ void User::createAccount() {
     cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
     account_type = static_cast<Type>(accTypeInput);
+    behavior = unique_ptr<AccountBehavior>(createBehaviorForType(account_type, &recent_transactions));
 
     string password;
     string confirmPassword;
@@ -463,8 +270,6 @@ bool User::withdraw(double amount) {
 
 // Modify existing account
 void User::modifyAccount() {
-    const string oldTransactionsPath = transactionFilePath();
-
     cout << "Modify Account Details" << endl;
     cout << "Current Name: " << user_name << endl;
     cout << "Current Account Type: " << accountTypeMap.at(account_type) << endl;
@@ -497,18 +302,6 @@ void User::modifyAccount() {
             cout << "Name unchanged." << endl;
         } else {
             cout << "Name updated successfully." << endl;
-        }
-
-        const string newTransactionsPath = transactionFilePath();
-        if (newTransactionsPath != oldTransactionsPath) {
-            std::error_code ec;
-            if (std::filesystem::exists(oldTransactionsPath, ec)) {
-                std::filesystem::rename(oldTransactionsPath, newTransactionsPath, ec);
-                if (ec) {
-                    cerr << "Warning: Could not rename transaction history file for updated username: "
-                         << ec.message() << endl;
-                }
-            }
         }
     }
 
@@ -546,147 +339,29 @@ void User::modifyAccount() {
     }
 }
 
-bool User::saveToCsv(const vector<User>& users) {
-    if (!ensureDataDirectory()) {
-        return false;
-    }
-
-    ofstream outFile(kCsvPath, ios::trunc);
-    if (!outFile.is_open()) {
-        perror("Error opening data/accounts.csv");
-        cerr << "Error exporting accounts to CSV!" << endl;
-        return false;
-    }
-
-    outFile << "Account Number,Name,Balance,Type," << kPasswordHeader << ","
-            << kTypeChangeEpochHeader << "\n";
-    outFile << fixed << setprecision(2);
-    for (const auto& user : users) {
-        outFile << escapeCsvField(user.account_number) << ","
-                << escapeCsvField(user.user_name) << ","
-                << user.account_balance << ","
-                << escapeCsvField(accountTypeMap.at(user.account_type)) << ","
-                << escapeCsvField(user.password_hash) << ","
-                << user.last_account_type_change_epoch_seconds << "\n";
-    }
-
-    if (!outFile.good()) {
-        perror("Error writing data/accounts.csv");
-        cerr << "Error: Failed while writing CSV file." << endl;
-        return false;
-    }
-
-    return true;
+User User::fromRecord(const UserRecord& record) {
+    User user;
+    user.account_number = record.account_number;
+    user.user_name = record.user_name;
+    user.password_hash = record.password_hash;
+    user.account_balance = record.account_balance;
+    user.account_type = record.account_type;
+    user.last_account_type_change_epoch_seconds = record.last_account_type_change_epoch_seconds;
+    user.recent_transactions = record.recent_transactions;
+    user.behavior = unique_ptr<AccountBehavior>(createBehaviorForType(user.account_type, &user.recent_transactions));
+    return user;
 }
 
-vector<User> User::loadFromCsv() {
-    vector<User> loadedUsers;
-
-    if (!ensureDataDirectory()) {
-        return loadedUsers;
-    }
-
-    ifstream inFile(kCsvPath);
-    if (!inFile.is_open()) {
-        if (errno == ENOENT) {
-            if (!persist(loadedUsers)) {
-                cerr << "Error: Failed to initialize storage files in data/." << endl;
-            }
-            return loadedUsers;
-        }
-
-        perror("Error opening data/accounts.csv");
-        cerr << "Error: Could not open CSV file for reading." << endl;
-        return loadedUsers;
-    }
-
-    string line;
-    size_t lineNumber = 0;
-    bool headerConsumed = false;
-
-    while (getline(inFile, line)) {
-        ++lineNumber;
-        if (line.empty()) {
-            continue;
-        }
-
-        if (!headerConsumed) {
-            headerConsumed = true;
-            if (line.rfind("Account Number", 0) == 0) {
-                continue;
-            }
-        }
-
-        vector<string> fields = splitCsvLine(line);
-        if (fields.size() != 4 && fields.size() != 5 && fields.size() != 6) {
-            cerr << "Warning: Skipping malformed CSV row at line " << lineNumber << "." << endl;
-            continue;
-        }
-
-        User user;
-        user.account_number = fields[0];
-        user.user_name = fields[1];
-
-        try {
-            user.account_balance = stod(fields[2]);
-        } catch (const exception&) {
-            cerr << "Warning: Invalid balance in CSV row at line " << lineNumber << "." << endl;
-            continue;
-        }
-
-        Type parsedType = SAVINGS;
-        if (!parseTypeFromString(fields[3], parsedType)) {
-            cerr << "Warning: Invalid account type in CSV row at line " << lineNumber << "." << endl;
-            continue;
-        }
-        user.account_type = parsedType;
-
-        if (fields.size() >= 5) {
-            user.password_hash = fields[4];
-        } else {
-            user.password_hash = "";
-        }
-
-        user.last_account_type_change_epoch_seconds = -1;
-        if (fields.size() >= 6) {
-            try {
-                user.last_account_type_change_epoch_seconds = stoll(fields[5]);
-            } catch (const exception&) {
-                cerr << "Warning: Invalid type-change timestamp in CSV row at line " << lineNumber << "." << endl;
-                user.last_account_type_change_epoch_seconds = -1;
-            }
-        }
-
-        if (user.account_type == SAVINGS) {
-            if (!loadTransactionsForUser(user)) {
-                cerr << "Warning: Could not load transaction history for user " << user.user_name << "." << endl;
-            }
-        } else {
-            user.recent_transactions.clear();
-        }
-        
-        // Initialize behavior after loading the account type and transactions
-        user.behavior = unique_ptr<AccountBehavior>(createBehaviorForType(user.account_type, &user.recent_transactions));
-
-        loadedUsers.push_back(user);
-    }
-
-    syncCounterFromUsers(loadedUsers);
-    return loadedUsers;
-}
-
-bool User::persist(const vector<User>& users) {
-    bool csvOk = saveToCsv(users);
-    bool transactionsOk = saveTransactionsForUsers(users);
-    return csvOk && transactionsOk;
-}
-
-bool User::exportToCSV(const vector<User>& users) {
-    bool ok = persist(users);
-    if (ok) {
-        cout << "Accounts exported successfully to CSV." << endl;
-    }
-    return ok;
+UserRecord User::toRecord() const {
+    UserRecord record;
+    record.account_number = account_number;
+    record.user_name = user_name;
+    record.password_hash = password_hash;
+    record.account_balance = account_balance;
+    record.account_type = account_type;
+    record.last_account_type_change_epoch_seconds = last_account_type_change_epoch_seconds;
+    record.recent_transactions = recent_transactions;
+    return record;
 }
 
 std::string User::getAccountNumber() const {

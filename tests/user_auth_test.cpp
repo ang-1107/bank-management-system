@@ -12,9 +12,9 @@ TEST_CASE("Password is stored as hash and verified on reload", "[regression][aut
     u.setPassword("my-secret-password");
     users.push_back(u);
 
-    REQUIRE(User::persist(users));
+    REQUIRE(UserDAO().persistAll(users));
 
-    std::vector<User> loaded = User::loadFromCsv();
+    std::vector<User> loaded = UserDAO().loadAll();
     REQUIRE(loaded.size() == 1);
     REQUIRE(loaded[0].verifyPassword("my-secret-password"));
     REQUIRE_FALSE(loaded[0].verifyPassword("wrong-password"));
