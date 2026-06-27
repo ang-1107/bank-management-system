@@ -5,7 +5,8 @@ CXXFLAGS := -std=c++17 -Wall -Wextra -I./include
 # Sources and artifacts
 MAIN_SRC := src/main.cpp
 USER_SRC := src/user.cpp
-OBJS := main.o user.o
+UTIL_SRC := src/util.cpp
+OBJS := main.o user.o util.o
 
 TARGET := bank.exe
 TEST := test.exe
@@ -18,11 +19,14 @@ main.o: $(MAIN_SRC) include/user.h
 user.o: $(USER_SRC) include/user.h
 	$(CXX) $(CXXFLAGS) -c $(USER_SRC) -o $@
 
+util.o: $(UTIL_SRC) include/util.h
+	$(CXX) $(CXXFLAGS) -c $(UTIL_SRC) -o $@
+
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET)
 
-test: tests/user_test.cpp $(USER_SRC) include/user.h
-	$(CXX) $(CXXFLAGS) tests/user_test.cpp $(USER_SRC) -o $(TEST)
+test: tests/user_test.cpp $(USER_SRC) $(UTIL_SRC) include/user.h include/util.h
+	$(CXX) $(CXXFLAGS) tests/user_test.cpp $(USER_SRC) $(UTIL_SRC) -o $(TEST)
 	./$(TEST)
 
 run: $(TARGET)
